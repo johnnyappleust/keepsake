@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Keepsake</title>
+  <link rel="stylesheet" href="../shared/base.css" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" id="openDashboardBrand" title="Open your Keepsake dashboard">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.2a.8.8 0 0 1-1.28.64L12 16.9l-5.22 3.94A.8.8 0 0 1 5.5 20.2V5A1.5 1.5 0 0 1 7 3.5Z" fill="#F5F1EA"/></svg>
+      </span>
+      <span class="brand-name">Keepsake</span>
+    </a>
+    <div class="topbar-actions">
+      <button class="btn btn-quiet btn-sm" id="openDashboard" type="button">Dashboard</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Loading skeleton -->
+    <section class="state" id="state-loading" aria-live="polite" aria-busy="true">
+      <div class="skel-hero">
+        <div class="skeleton skel-img"></div>
+        <div class="skel-lines">
+          <div class="skeleton skel-line w80"></div>
+          <div class="skeleton skel-line w50"></div>
+          <div class="skeleton skel-line w35"></div>
+        </div>
+      </div>
+      <div class="skeleton skel-block"></div>
+      <div class="skeleton skel-block short"></div>
+      <p class="muted small center">Looking at this page…</p>
+    </section>
+
+    <!-- Restricted / unreadable page -->
+    <section class="state hidden" id="state-restricted">
+      <div class="empty">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 4v5"/></svg>
+        </div>
+        <h2>Nothing to save here</h2>
+        <p id="restrictedMessage">Chrome doesn’t let extensions read this kind of page. Open a product page on a regular website and try again.</p>
+        <div class="empty-actions">
+          <button class="btn" id="restrictedDashboard" type="button">Open dashboard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Instagram saved collection import -->
+    <section class="state hidden" id="state-instagram">
+      <div class="ig-card">
+        <div class="ig-head">
+          <span class="pill">Instagram</span>
+          <h2 id="igTitle">Saved collection detected</h2>
+          <p class="muted" id="igSubtitle"></p>
+        </div>
+
+        <div id="igIdle">
+          <p class="ig-explain">Keepsake will read the posts in <strong id="igName">this collection</strong> as you have it open right now, scroll to load more, and show you a review screen before anything is saved. Nothing is sent anywhere.</p>
+          <div class="ig-actions">
+            <button class="btn btn-primary" id="igStart" type="button">Import this collection</button>
+          </div>
+          <p class="help">Only the collection open in this tab is scanned. Your login, cookies and messages are never read.</p>
+        </div>
+
+        <div id="igRunning" class="hidden">
+          <div class="ig-progress">
+            <div class="ig-count"><span id="igCount">0</span> <span class="muted">posts found</span></div>
+            <div class="ig-spinner" aria-hidden="true"></div>
+          </div>
+          <p class="help" id="igStatus">Scrolling through the collection…</p>
+          <div class="ig-actions">
+            <button class="btn" id="igStop" type="button">Stop</button>
+          </div>
+        </div>
+
+        <div id="igDone" class="hidden">
+          <div class="notice notice-ok" id="igDoneNotice">Scan finished.</div>
+          <div class="ig-actions">
+            <button class="btn btn-primary" id="igReview" type="button">Review posts</button>
+            <button class="btn btn-quiet" id="igAgain" type="button">Scan again</button>
+          </div>
+        </div>
+
+        <div id="igError" class="hidden">
+          <div class="notice notice-danger" id="igErrorNotice"></div>
+          <div class="ig-actions">
+            <button class="btn" id="igRetry" type="button">Try again</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product editor -->
+    <section class="state hidden" id="state-product">
+      <div class="notice notice-warn hidden" id="sparseNotice">This page didn’t expose much product data — check the title and price before saving.</div>
+
+      <div class="hero">
+        <div class="hero-image" id="heroImage">
+          <img id="heroImg" alt="" hidden />
+          <div class="hero-placeholder" id="heroPlaceholder" aria-hidden="true"><span id="heroInitial">K</span></div>
+        </div>
+        <div class="hero-meta">
+          <div class="retailer-row">
+            <span class="retailer" id="retailer"></span>
+            <span class="dot-sep" aria-hidden="true">·</span>
+            <span class="host truncate" id="host" title=""></span>
+          </div>
+          <label class="sr-only" for="titleInput">Title</label>
+          <textarea class="title-input" id="titleInput" rows="2" maxlength="200" spellcheck="false" placeholder="Give this a title"></textarea>
+          <div class="price-row">
+            <label class="sr-only" for="priceInput">Price</label>
+            <input class="input price-input" id="priceInput" inputmode="decimal" placeholder="Price" />
+            <label class="sr-only" for="currencyInput">Currency</label>
+            <input class="input currency-input" id="currencyInput" maxlength="4" placeholder="USD" />
+          </div>
+        </div>
+      </div>
+
+      <div class="candidates hidden" id="candidates" role="radiogroup" aria-label="Choose the main image"></div>
+
+      <div class="collection-row">
+        <div class="collection-label">
+          <span class="muted small">Saving to</span>
+          <span class="pill" id="confidencePill" title="">—</span>
+        </div>
+        <div class="collection-picker">
+          <label class="sr-only" for="collectionSelect">Collection</label>
+          <select class="select" id="collectionSelect"></select>
+        </div>
+        <div class="new-collection hidden" id="newCollectionRow">
+          <label class="sr-only" for="newCollectionInput">New collection name</label>
+          <input class="input" id="newCollectionInput" maxlength="80" placeholder="New collection name" />
+          <button class="btn btn-quiet btn-sm" id="newCollectionCancel" type="button">Cancel</button>
+        </div>
+        <p class="reason small muted" id="reason"></p>
+      </div>
+
+      <div class="field">
+        <label class="sr-only" for="noteInput">Note</label>
+        <textarea class="textarea note-input" id="noteInput" rows="2" maxlength="1000" placeholder="Add a note (optional)"></textarea>
+      </div>
+
+      <div class="dup hidden" id="dupRow">
+        <div class="dup-text">
+          <strong>Already saved</strong>
+          <span id="dupText" class="small"></span>
+        </div>
+        <div class="dup-actions">
+          <button class="btn btn-sm btn-primary" id="dupUpdate" type="button">Update existing item</button>
+          <button class="btn btn-sm" id="dupCopy" type="button">Save another copy</button>
+        </div>
+      </div>
+
+      <div class="actions" id="saveActions">
+        <button class="btn btn-primary btn-save" id="saveBtn" type="button">Save item</button>
+      </div>
+      <p class="notice notice-danger hidden" id="saveError" role="alert"></p>
+    </section>
+
+    <!-- Saved confirmation -->
+    <section class="state hidden" id="state-saved" aria-live="polite">
+      <div class="saved">
+        <div class="saved-check" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+        </div>
+        <h2 id="savedTitle">Saved</h2>
+        <p class="muted" id="savedSubtitle"></p>
+        <div class="saved-thumb" id="savedThumb"></div>
+        <label class="check hidden" id="learnRow">
+          <input type="checkbox" id="learnCheck" />
+          <span>Use this choice for similar items in the future</span>
+        </label>
+        <div class="saved-actions">
+          <button class="btn" id="savedUndo" type="button">Undo</button>
+          <button class="btn btn-primary" id="savedOpen" type="button">Open in dashboard</button>
+        </div>
+        <p class="help" id="savedInboxHint"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <button class="btn-link small" id="floatingLink" type="button">On-page save buttons</button>
+    <span class="muted small">Stored only in this browser</span>
+  </footer>
+
+  <script src="../instagram/adapter.js"></script>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
