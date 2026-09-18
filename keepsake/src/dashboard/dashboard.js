@@ -5,7 +5,7 @@
 import { createStore, chromeBackend } from '../shared/storage.js';
 import { MSG } from '../shared/messages.js';
 import { el, clear, formatPrice, formatDate, sanitizeText, parsePrice, debounce, pluralize, hostnameOf, prettyRetailer } from '../shared/util.js';
-import { classify, learnFromCorrection } from '../shared/categorizer.js';
+import { classify } from '../shared/categorizer.js';
 import * as UI from './ui.js';
 import { renderSettings, renderAI, renderPrivacy, analyzeItems } from './settings.js';
 import { renderImport } from './importer.js';
@@ -1184,14 +1184,35 @@ function renderReview(view) {
   for (const item of items) {
     const cls = classify(item, { collections: state.collections, prefs: state.prefs, settings: state.settings });
     const suggestions = (cls.alternatives || []).filter((a) => !a.isNew && a.collectionId).slice(0, 3);
-    const select = UI.selectInput({ value: '', options: [{ value: '', label: 'Other collection…' }, ...regular.map((c) => ({ value: c.id, label: c.name }))], onChange: async (v) => { if (v) await fileItem(item, v, false); }, label: `Collection for ${item.title}` });
+    const select = UI.selectInput({
+      value: '',
+      options: [
+        { value: '', label: 'Other collection…' },
+        ...regular.map((c) => ({ value: c.id, label: c.name })),
+        { value: '__new', label: '+ New collection…' },
+      ],
+      onChange: async (v) => {
+        if (!v) return;
+        if (v === '__new') {
+          select.value = '';
+          const name = await UI.promptDialog({ title: 'New collection', label: 'Name', placeholder: 'e.g. Garden', confirmLabel: 'Create' });
+          if (!name) return;
+          const { collection, existed } = await store.createCollection({ name });
+          if (existed) UI.toast(`“${collection.name}” already exists — using it.`);
+          await fileItem(item, collection.id);
+          return;
+        }
+        await fileItem(item, v);
+      },
+      label: `Collection for ${item.title}`,
+    });
     const row = el('div', { class: 'review-row' }, [
       UI.pictureNode({ src: item.image, title: item.title, className: 'review-pic' }),
       el('div', {}, [
         el('div', { class: 'review-title' }, [item.title]),
         el('div', { class: 'review-reason' }, [[item.retailer || item.host, item.categorizationReason || cls.reason].filter(Boolean).join(' · ')]),
         el('div', { class: 'review-actions' }, [
-          ...suggestions.map((s) => el('button', { type: 'button', class: 'btn btn-sm btn-primary', onClick: () => fileItem(item, s.collectionId, true) }, [`Move to ${s.collectionName}`])),
+          ...suggestions.map((s) => el('button', { type: 'button', class: 'btn btn-sm btn-primary', onClick: () => fileItem(item, s.collectionId) }, [`Move to ${s.collectionName}`])),
           select,
           el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => openQuickView(item.id) }, ['Details']),
           el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => deleteItems([item]) }, ['Delete']),
@@ -1204,16 +1225,10 @@ function renderReview(view) {
   view.append(page);
 }
 
-async function fileItem(item, collectionId, suggested) {
+async function fileItem(item, collectionId) {
   await store.moveItems([item.id], collectionId, { learn: 'light' });
   const col = ctx.collectionById(collectionId);
-  UI.toast(`Moved to ${col ? col.name : 'collection'}.`, {
-    action: suggested ? { label: 'Use for similar items', onClick: async () => {
-      const prefs = await store.getPrefs();
-      await store.setPrefs(learnFromCorrection(item, item.collectionId, collectionId, prefs, { strong: true }));
-      UI.toast('Got it — similar items will go there too.', { duration: 2000 });
-    } } : null,
-  });
+  UI.toast(`Moved to ${col ? col.name : 'collection'}.`);
 }
 
 // --- welcome ---------------------------------------------------------------------------------------
