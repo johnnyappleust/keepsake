@@ -1564,7 +1564,10 @@ body.modal-open {
   border-radius: 16px;
   min-height: 160px;
   max-height: 38vh;
-  transition: max-height var(--t-med) var(--ease);
+  /* Slower than the shared --t-med tokens: this swings across a much bigger
+     range (38vh to 70vh) than typical UI transitions, so it needs more time
+     to read as a gradual expand/collapse rather than a snap. */
+  transition: max-height 450ms var(--ease);
 }
 
 .quickview-pic[role="button"] {
