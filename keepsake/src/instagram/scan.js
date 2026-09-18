@@ -99,6 +99,20 @@
       report('error', { error: 'Open one of your Saved collections on Instagram first, then start the import.' });
       return;
     }
+    if (opts.autoScroll) {
+      // Instagram virtualizes posts far from the viewport, so if the tab was
+      // left scrolled down before the import started, posts above the fold
+      // may already be unmounted from the DOM. Jump to the top first so the
+      // loop below always walks the whole collection top to bottom, however
+      // it was scrolled when the user clicked import.
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      await new Promise((r) => (state.timer = setTimeout(r, opts.intervalMs || 900)));
+      if (!state.running) {
+        await captureQueue;
+        report('done', { reason: state.stopReason || 'stopped' });
+        return;
+      }
+    }
     let lastNewAt = Date.now();
     let lastHeight = 0;
     let stableRounds = 0;
