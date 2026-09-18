@@ -1227,7 +1227,7 @@ function renderReview(view) {
 
 async function fileItem(item, collectionId) {
   await store.moveItems([item.id], collectionId, { learn: 'light' });
-  const col = ctx.collectionById(collectionId);
+  const col = await store.getCollection(collectionId);
   UI.toast(`Moved to ${col ? col.name : 'collection'}.`);
 }
 
