@@ -14,6 +14,9 @@ import { renderTabsImport } from './tabsImport.js';
 const store = createStore(chromeBackend());
 const $ = (id) => document.getElementById(id);
 
+// Labels for the "import method" filter — keys match item.type in shared/storage.js.
+const SOURCE_TYPE_LABELS = { instagram: 'Instagram', inspiration: 'Inspiration', product: 'Saved from a page' };
+
 const state = {
   route: { name: 'all', id: '' },
   collections: [],
@@ -24,6 +27,7 @@ const state = {
   search: '',
   sort: 'newest',
   retailer: '',
+  sourceType: '',
   selecting: false,
   selected: new Set(),
   shown: 120,
@@ -134,6 +138,10 @@ function bindChrome() {
   });
   $('retailerSelect').addEventListener('change', () => {
     state.retailer = $('retailerSelect').value;
+    renderView();
+  });
+  $('sourceTypeSelect').addEventListener('change', () => {
+    state.sourceType = $('sourceTypeSelect').value;
     renderView();
   });
   $('selectToggle').addEventListener('click', () => (state.selecting ? exitSelection(true) : enterSelection()));
@@ -339,6 +347,14 @@ function renderToolbar() {
     for (const rname of retailers) sel.append(el('option', { value: rname, text: rname }));
     sel.value = retailers.includes(cur) ? cur : '';
     if (!retailers.includes(cur)) state.retailer = '';
+    const sourceTypes = [...new Set(base.map((i) => i.type).filter(Boolean))].sort((a, b) => (SOURCE_TYPE_LABELS[a] || a).localeCompare(SOURCE_TYPE_LABELS[b] || b));
+    const sourceSel = $('sourceTypeSelect');
+    const curSource = state.sourceType;
+    clear(sourceSel);
+    sourceSel.append(el('option', { value: '', text: 'All sources' }));
+    for (const t of sourceTypes) sourceSel.append(el('option', { value: t, text: SOURCE_TYPE_LABELS[t] || t }));
+    sourceSel.value = sourceTypes.includes(curSource) ? curSource : '';
+    if (!sourceTypes.includes(curSource)) state.sourceType = '';
     $('sortSelect').value = state.sort;
     $('searchInput').value = state.search;
     $('selectToggle').setAttribute('aria-pressed', state.selecting ? 'true' : 'false');
@@ -412,6 +428,7 @@ function baseItems() {
 function currentGridItems() {
   let list = baseItems();
   if (state.retailer) list = list.filter((i) => i.retailer === state.retailer);
+  if (state.sourceType) list = list.filter((i) => i.type === state.sourceType);
   const q = state.search.toLowerCase();
   if (q) {
     list = list.filter((i) => {
@@ -463,10 +480,10 @@ function renderGrid(view) {
 
 function gridEmptyState() {
   const r = state.route;
-  if (state.search || state.retailer) {
+  if (state.search || state.retailer || state.sourceType) {
     return UI.emptyState({
       title: 'No matches', message: 'Nothing here matches your search or filter.',
-      actions: [el('button', { type: 'button', class: 'btn', onClick: () => { state.search = ''; state.retailer = ''; $('searchInput').value = ''; renderToolbar(); renderView(); } }, ['Clear search'])],
+      actions: [el('button', { type: 'button', class: 'btn', onClick: () => { state.search = ''; state.retailer = ''; state.sourceType = ''; $('searchInput').value = ''; renderToolbar(); renderView(); } }, ['Clear search'])],
       icon: UI.folderIcon(),
     });
   }
