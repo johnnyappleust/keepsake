@@ -258,14 +258,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.collection-item.inbox {
-  margin-top: 6px;
-  border-top: 1px dashed var(--line);
-  border-radius: 0 0 10px 10px;
-  padding-top: 4px;
-  height: 42px;
-}
-
 .nav-bottom {
   flex: none;
   margin-top: 16px;
@@ -1559,6 +1551,37 @@ body.modal-open {
 .item-source svg {
   width: 13px;
   height: 13px;
+}
+
+/* Quick view modal */
+.quickview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quickview-pic {
+  border-radius: 16px;
+  min-height: 160px;
+}
+
+.quickview-pic img {
+  height: auto;
+  max-height: 50vh;
+  object-fit: contain;
+  background: var(--paper-3);
+}
+
+.quickview-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.quickview-price {
+  font-size: 16px;
+  color: var(--ink-2);
 }
 
 .toggles {

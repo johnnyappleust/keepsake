@@ -159,7 +159,7 @@ async function saveProduct(rawProduct, { collectionId = null, force = false, sou
     try {
       const key = await store.getSecret('aiApiKey');
       if (key) {
-        const ai = await classifyWithAI(product, collections.filter((c) => c.taxonomyKey !== 'inbox'), settings, key);
+        const ai = await classifyWithAI(product, collections, settings, key);
         if (ai && ai.confidence >= (prefs.confidenceThreshold || 0.6)) {
           classification = { ...classification, collectionId: ai.collectionId, collectionName: ai.collectionName, confidence: ai.confidence, reason: `AI: ${ai.reason}`, isNew: false, isInbox: false, taxonomyKey: null };
           categorizationSource = 'ai';
@@ -184,10 +184,6 @@ async function saveProduct(rawProduct, { collectionId = null, force = false, sou
     } else {
       targetId = classification.collectionId;
     }
-  }
-  if (!targetId) {
-    const inbox = await store.getInbox();
-    targetId = inbox ? inbox.id : null;
   }
   const item = await store.addItem({
     ...product,
@@ -229,8 +225,8 @@ async function showPageToast(tabId, res, product) {
         if (p.kind === 'error') t.show({ title: 'Couldn’t save', message: p.error });
         else if (p.kind === 'duplicate') t.show({ title: 'Already in Keepsake', message: `“${cut(p.existing.title || p.title, 60)}” is ${p.existing.collectionName ? 'in ' + p.existing.collectionName : 'already saved'}.`, actions: [{ label: 'Open', primary: true, onClick: () => send({ type: M.OPEN_DASHBOARD, hash: `#item/${p.existing.id}` }) }] });
         else t.show({
-          title: p.isInbox ? 'Saved to Inbox' : `Saved to ${p.collectionName}`,
-          message: p.isInbox ? `Not sure where “${cut(p.title, 50)}” belongs — sort it in the dashboard.` : cut(p.title, 70),
+          title: p.isInbox ? 'Not sure — saved for review' : `Saved to ${p.collectionName}`,
+          message: p.isInbox ? `Not sure where “${cut(p.title, 50)}” belongs — sort it from the Review queue.` : cut(p.title, 70),
           actions: [
             { label: 'Undo', onClick: () => send({ type: M.UNDO_SAVE, itemId: p.itemId }) },
             { label: 'Edit', quiet: true, onClick: () => send({ type: M.OPEN_DASHBOARD, hash: `#item/${p.itemId}` }) },
@@ -306,7 +302,7 @@ async function floatingConfig(host) {
   const hidden = (f.hiddenSites || []).map((h) => h.toLowerCase());
   const hostLc = String(host || '').toLowerCase().replace(/^www\./, '');
   const enabled = f.mode !== 'off' && !hidden.includes(hostLc) && !hidden.includes('www.' + hostLc);
-  const collections = (await store.getCollections()).map((c) => ({ id: c.id, name: c.name, isInbox: c.taxonomyKey === 'inbox' }));
+  const collections = (await store.getCollections()).map((c) => ({ id: c.id, name: c.name }));
   const prefs = await store.getPrefs();
   return { ok: true, enabled, settings: f, collections, threshold: prefs.confidenceThreshold };
 }

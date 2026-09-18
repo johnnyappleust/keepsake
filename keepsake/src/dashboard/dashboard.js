@@ -6,7 +6,6 @@ import { createStore, chromeBackend } from '../shared/storage.js';
 import { MSG } from '../shared/messages.js';
 import { el, clear, formatPrice, formatDate, sanitizeText, parsePrice, debounce, pluralize, hostnameOf, prettyRetailer } from '../shared/util.js';
 import { classify, learnFromCorrection } from '../shared/categorizer.js';
-import { INBOX_KEY } from '../shared/taxonomy.js';
 import * as UI from './ui.js';
 import { renderSettings, renderAI, renderPrivacy, analyzeItems } from './settings.js';
 import { renderImport } from './importer.js';
@@ -49,8 +48,7 @@ const ctx = {
   render: () => render(),
   navigate: (hash) => navigate(hash),
   openItem: (id) => openItem(id),
-  inbox: () => state.collections.find((c) => c.taxonomyKey === INBOX_KEY) || null,
-  regularCollections: () => state.collections.filter((c) => c.taxonomyKey !== INBOX_KEY),
+  regularCollections: () => state.collections,
   collectionById: (id) => state.collections.find((c) => c.id === id) || null,
   applyTheme: () => applyTheme(),
 };
@@ -65,7 +63,7 @@ async function boot() {
   window.addEventListener('hashchange', () => {
     state.route = parseHash();
     state.shown = 120;
-    if (!['all', 'inbox', 'favorites', 'archive', 'c', 'item'].includes(state.route.name)) exitSelection(false);
+    if (!['all', 'favorites', 'archive', 'c', 'item'].includes(state.route.name)) exitSelection(false);
     render();
   });
   state.route = parseHash();
@@ -96,12 +94,7 @@ async function reload() {
 }
 
 function sortCollections(list) {
-  return list.sort((a, b) => {
-    const ai = a.taxonomyKey === INBOX_KEY ? 1 : 0;
-    const bi = b.taxonomyKey === INBOX_KEY ? 1 : 0;
-    if (ai !== bi) return ai - bi;
-    return (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name);
-  });
+  return list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name));
 }
 
 function applyTheme() {
@@ -183,7 +176,7 @@ function toggleNav(force) {
 
 // --- rendering -------------------------------------------------------------------------
 
-const GRID_ROUTES = new Set(['all', 'inbox', 'favorites', 'archive', 'c', 'item']);
+const GRID_ROUTES = new Set(['all', 'favorites', 'archive', 'c', 'item']);
 
 function render() {
   renderNav();
@@ -200,12 +193,10 @@ function renderNav() {
     const route = a.dataset.route;
     a.classList.toggle('active', route === r.name || (r.name === 'item' && route === 'all'));
   });
-  const inbox = ctx.inbox();
   const live = state.items.filter((i) => !i.archived);
   setCount('countAll', live.length);
   setCount('countFav', live.filter((i) => i.favorite).length);
-  setCount('countInbox', inbox ? live.filter((i) => i.collectionId === inbox.id).length : 0);
-  setCount('countReview', live.filter((i) => i.needsReview).length);
+  setCount('countReview', live.filter((i) => !i.collectionId).length);
   setCount('countArchive', state.items.filter((i) => i.archived).length);
   setCount('countImport', state.scan && state.scan.posts && state.scan.status === 'done' ? state.scan.posts.length : 0);
 }
@@ -223,23 +214,22 @@ function renderSidebarCollections() {
   const covers = new Map();
   for (const i of state.items) if (i.image && !i.archived && !covers.has(i.collectionId)) covers.set(i.collectionId, i.image);
   for (const c of state.collections) {
-    const isInbox = c.taxonomyKey === INBOX_KEY;
-    const active = (state.route.name === 'c' && state.route.id === c.id) || (state.route.name === 'inbox' && isInbox);
+    const active = state.route.name === 'c' && state.route.id === c.id;
     const cover = c.coverImage || covers.get(c.id) || '';
     const coverNode = el('span', { class: 'collection-cover' }, cover ? [el('img', { src: cover, alt: '', loading: 'lazy', onError: (e) => { e.target.remove(); } })] : [UI.initialFor(c.name)]);
     if (!cover) coverNode.style.background = c.color || '#8A9A88';
     const li = el('li', {
-      class: `collection-item ${active ? 'active' : ''} ${isInbox ? 'inbox' : ''}`,
-      draggable: !isInbox,
+      class: `collection-item ${active ? 'active' : ''}`,
+      draggable: true,
       tabindex: '0',
       role: 'link',
       dataset: { id: c.id },
-      onClick: () => navigate(isInbox ? '#inbox' : `#c/${c.id}`),
+      onClick: () => navigate(`#c/${c.id}`),
       onKeydown: (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          navigate(isInbox ? '#inbox' : `#c/${c.id}`);
-        } else if (!isInbox && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          navigate(`#c/${c.id}`);
+        } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
           e.preventDefault();
           moveCollectionBy(c.id, e.key === 'ArrowUp' ? -1 : 1).then(() => {
             const again = list.querySelector(`[data-id="${c.id}"]`);
@@ -248,7 +238,7 @@ function renderSidebarCollections() {
         }
       },
     }, [coverNode, el('span', { class: 'collection-name' }, [c.name]), el('span', { class: 'collection-count' }, [String(counts.get(c.id) || '')])]);
-    if (!isInbox) bindDrag(li, list);
+    bindDrag(li, list);
     list.append(li);
   }
   markListScrolled(list);
@@ -327,8 +317,7 @@ function renderToolbar() {
   controls.classList.toggle('hidden-controls', !isGrid);
   $('bulkbar').classList.toggle('hidden', !(isGrid && state.selecting));
   let title = 'All saves';
-  if (r.name === 'inbox') title = 'Inbox';
-  else if (r.name === 'favorites') title = 'Favorites';
+  if (r.name === 'favorites') title = 'Favorites';
   else if (r.name === 'archive') title = 'Archive';
   else if (r.name === 'review') title = 'Review queue';
   else if (r.name === 'import') title = 'Instagram import';
@@ -413,9 +402,7 @@ function isGridRoute() {
 
 function baseItems() {
   const r = state.route;
-  const inbox = ctx.inbox();
   const live = state.items.filter((i) => !i.archived);
-  if (r.name === 'inbox') return inbox ? live.filter((i) => i.collectionId === inbox.id) : [];
   if (r.name === 'favorites') return live.filter((i) => i.favorite);
   if (r.name === 'archive') return state.items.filter((i) => i.archived);
   if (r.name === 'c') return live.filter((i) => i.collectionId === r.id);
@@ -458,10 +445,6 @@ function renderGrid(view) {
     }
     view.append(collectionHero(col));
   }
-  if (r.name === 'inbox') {
-    const inbox = ctx.inbox();
-    if (inbox) view.append(collectionHero(inbox));
-  }
   const items = currentGridItems();
   if (!items.length) {
     view.append(gridEmptyState());
@@ -487,7 +470,6 @@ function gridEmptyState() {
       icon: UI.folderIcon(),
     });
   }
-  if (r.name === 'inbox') return UI.emptyState({ title: 'Inbox is clear', message: 'Items Keepsake couldn’t place confidently land here, ready for you to sort.', icon: UI.checkIcon() });
   if (r.name === 'favorites') return UI.emptyState({ title: 'No favorites yet', message: 'Tap the star on any card to keep it close.', icon: UI.starIcon(true) });
   if (r.name === 'archive') return UI.emptyState({ title: 'Nothing archived', message: 'Archive items you’ve bought or moved on from. They stay searchable here.', icon: UI.folderIcon() });
   if (r.name === 'c') return UI.emptyState({ title: 'This collection is empty', message: 'Save something from a product page and Keepsake will file it here when it fits.', icon: UI.folderIcon() });
@@ -531,7 +513,7 @@ function cardNode(item) {
       }
       return;
     }
-    openItem(item.id);
+    openQuickView(item.id);
   } }, [
     UI.pictureNode({ src: item.image, aspect: item.imageAspect, title: item.title }),
     el('div', { class: 'card-body' }, [
@@ -549,7 +531,7 @@ function cardNode(item) {
     item.purchased ? el('span', { class: 'badge' }, ['Purchased']) : null,
     item.type === 'instagram' || item.instagram ? el('span', { class: 'badge badge-sage' }, [UI.instagramIcon(), 'Instagram']) : null,
     item.type === 'inspiration' && !item.instagram ? el('span', { class: 'badge badge-sage' }, ['Inspiration']) : null,
-    item.needsReview && !item.archived ? el('span', { class: 'badge' }, ['Needs sorting']) : null,
+    !item.collectionId && !item.archived ? el('span', { class: 'badge' }, ['Needs sorting']) : null,
   ]);
   const favBtn = el('button', { type: 'button', class: `btn btn-icon ${item.favorite ? 'is-on' : ''}`, 'aria-label': item.favorite ? 'Remove from favorites' : 'Add to favorites', 'aria-pressed': item.favorite ? 'true' : 'false', onClick: async (e) => {
     e.stopPropagation();
@@ -713,8 +695,7 @@ function relatedNode(item) {
 
 // Move one or more items with a collection picker. Resolves true when moved.
 async function moveDialog(items) {
-  const inbox = ctx.inbox();
-  const options = [...ctx.regularCollections().map((c) => ({ value: c.id, label: c.name })), inbox ? { value: inbox.id, label: inbox.name } : null, { value: '__new', label: '＋ New collection…' }].filter(Boolean);
+  const options = [...ctx.regularCollections().map((c) => ({ value: c.id, label: c.name })), { value: '__new', label: '＋ New collection…' }];
   const current = items.length === 1 ? items[0].collectionId : '';
   const select = UI.selectInput({ value: current || options[0].value, options, onChange: (v) => { newRow.classList.toggle('hidden', v !== '__new'); if (v === '__new') newInput.focus(); }, label: 'Collection' });
   const newInput = el('input', { class: 'input', placeholder: 'New collection name', maxlength: '80', 'aria-label': 'New collection name' });
@@ -776,14 +757,42 @@ function cut(s, n) {
 
 // --- item detail ---------------------------------------------------------------------------------
 
+// A lightweight look at an item — image, title, price, and a link out. The
+// full editor (title/price/note/collection/etc.) is one click away via
+// "Edit details", both here and in each card's overflow menu.
+async function openQuickView(id) {
+  const item = await store.getItem(id);
+  if (!item) {
+    UI.toast('That item no longer exists.', { kind: 'danger' });
+    return;
+  }
+  const price = formatPrice(item.price, item.currency);
+  const openLink = item.url
+    ? el('a', { class: 'btn btn-primary', href: item.url, target: '_blank', rel: 'noopener noreferrer' }, [UI.externalIcon(), item.type === 'instagram' ? 'Open post' : 'Visit page'])
+    : null;
+  const body = el('div', { class: 'quickview' }, [
+    UI.pictureNode({ src: item.image, aspect: item.imageAspect, title: item.title, className: 'quickview-pic' }),
+    el('div', { class: 'quickview-title' }, [item.title]),
+    price ? el('div', { class: 'quickview-price' }, [price]) : null,
+    openLink,
+  ]);
+  await UI.openModal({
+    title: 'Quick view',
+    body,
+    actions: [
+      { label: 'Edit details', quiet: true, closes: false, onClick: async (close) => { close(false); await openItem(item.id); } },
+      { label: 'Close', value: false },
+    ],
+  });
+}
+
 async function openItem(id) {
   const item = await store.getItem(id);
   if (!item) {
     UI.toast('That item no longer exists.', { kind: 'danger' });
     return;
   }
-  const inbox = ctx.inbox();
-  const collections = [...ctx.regularCollections(), inbox].filter(Boolean);
+  const collections = ctx.regularCollections();
   let chosenImage = item.image || '';
 
   const titleInput = el('textarea', { class: 'textarea', rows: '2', maxlength: '200', 'aria-label': 'Title' });
@@ -794,7 +803,10 @@ async function openItem(id) {
   currencyInput.value = item.currency || '';
   const noteInput = el('textarea', { class: 'textarea', rows: '3', maxlength: '1000', placeholder: 'Add a note', 'aria-label': 'Note' });
   noteInput.value = item.note || '';
-  const colSelect = UI.selectInput({ value: item.collectionId || (inbox ? inbox.id : ''), options: collections.map((c) => ({ value: c.id, label: c.name })), onChange: () => learnRow.classList.toggle('hidden', colSelect.value === item.collectionId), label: 'Collection' });
+  // An uncategorized item (still waiting in Review) gets a placeholder option so
+  // saving other edits doesn't silently file it into whatever collection sorts first.
+  const colOptions = [...(item.collectionId ? [] : [{ value: '', label: 'Not sorted yet' }]), ...collections.map((c) => ({ value: c.id, label: c.name }))];
+  const colSelect = UI.selectInput({ value: item.collectionId || '', options: colOptions, onChange: () => learnRow.classList.toggle('hidden', colSelect.value === item.collectionId), label: 'Collection' });
   const learnCheck = el('input', { type: 'checkbox' });
   const learnRow = el('label', { class: 'check hidden' }, [learnCheck, el('span', {}, ['Use this choice for similar items in the future'])]);
 
@@ -1050,26 +1062,22 @@ function renderAiBox(box, item) {
 // --- collections ---------------------------------------------------------------------------------
 
 function collectionHero(col) {
-  const isInbox = col.taxonomyKey === INBOX_KEY;
   const count = state.items.filter((i) => i.collectionId === col.id && !i.archived).length;
   const cover = col.coverImage || state.items.find((i) => i.collectionId === col.id && i.image && !i.archived)?.image || '';
   const coverNode = el('div', { class: 'cover' }, cover ? [el('img', { src: cover, alt: '', onError: (e) => e.target.remove() })] : [UI.initialFor(col.name)]);
   coverNode.style.background = col.color || '#8A9A88';
-  const actions = [];
-  if (!isInbox) {
-    actions.push(el('button', { type: 'button', class: 'btn btn-sm', onClick: () => renameCollection(col) }, ['Rename']));
-    actions.push(el('button', { type: 'button', class: 'btn btn-sm', onClick: () => editCollection(col) }, ['Keywords & color']));
-    actions.push(el('button', { type: 'button', class: 'btn btn-sm', onClick: () => mergeCollection(col) }, ['Merge into…']));
-    actions.push(el('button', { type: 'button', class: 'btn btn-sm btn-danger', onClick: () => deleteCollection(col) }, ['Delete']));
-  } else {
-    actions.push(el('button', { type: 'button', class: 'btn btn-sm', onClick: () => navigate('#review') }, ['Open review queue']));
-  }
+  const actions = [
+    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => renameCollection(col) }, ['Rename']),
+    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => editCollection(col) }, ['Keywords & color']),
+    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => mergeCollection(col) }, ['Merge into…']),
+    el('button', { type: 'button', class: 'btn btn-sm btn-danger', onClick: () => deleteCollection(col) }, ['Delete']),
+  ];
   const keywords = col.keywords || [];
   return el('div', { class: 'collection-hero' }, [
     coverNode,
     el('div', { class: 'collection-hero-text' }, [
       el('h2', {}, [col.name]),
-      el('p', {}, [col.description || (isInbox ? 'Items Keepsake couldn’t file confidently.' : 'No description yet.'), ` · ${pluralize(count, 'item', 'items')}`]),
+      el('p', {}, [col.description || 'No description yet.', ` · ${pluralize(count, 'item', 'items')}`]),
       keywords.length ? el('div', { class: 'chips' }, keywords.slice(0, 12).map((k) => el('span', { class: 'pill' }, [k]))) : null,
       el('div', { class: 'collection-hero-actions' }, actions),
     ]),
@@ -1152,7 +1160,7 @@ async function mergeCollection(col) {
 async function deleteCollection(col) {
   const count = state.items.filter((i) => i.collectionId === col.id).length;
   const deleteItemsCheck = el('input', { type: 'checkbox' });
-  const extra = count ? el('label', { class: 'check' }, [deleteItemsCheck, el('span', {}, [`Also delete the ${pluralize(count, 'item', 'items')} inside (otherwise they move to the Inbox)`])]) : null;
+  const extra = count ? el('label', { class: 'check' }, [deleteItemsCheck, el('span', {}, [`Also delete the ${pluralize(count, 'item', 'items')} inside (otherwise they'll be uncategorized, waiting in Review)`])]) : null;
   const ok = await UI.confirmDialog({ title: `Delete “${col.name}”?`, message: count ? `This collection holds ${pluralize(count, 'item', 'items')}.` : 'This collection is empty.', confirmLabel: 'Delete collection', danger: true, extra });
   if (!ok) return;
   await store.deleteCollection(col.id, { deleteItems: !!deleteItemsCheck.checked });
@@ -1163,11 +1171,11 @@ async function deleteCollection(col) {
 // --- review queue --------------------------------------------------------------------------------
 
 function renderReview(view) {
-  const items = state.items.filter((i) => i.needsReview && !i.archived);
+  const items = state.items.filter((i) => !i.collectionId && !i.archived);
   const page = el('div', { class: 'page page-wide' });
-  page.append(el('p', { class: 'page-intro' }, ['These saves landed in the Inbox because Keepsake wasn’t confident. Pick a collection and it learns for next time.']));
+  page.append(el('p', { class: 'page-intro' }, ['Keepsake wasn’t confident enough to file these automatically. Pick a collection for each and it learns for next time.']));
   if (!items.length) {
-    page.append(UI.emptyState({ title: 'Nothing to review', message: 'Low-confidence saves show up here. You’re all caught up.', icon: UI.checkIcon() }));
+    page.append(UI.emptyState({ title: 'Nothing to review', message: 'Uncategorized saves show up here. You’re all caught up.', icon: UI.checkIcon() }));
     view.append(page);
     return;
   }
@@ -1185,11 +1193,7 @@ function renderReview(view) {
         el('div', { class: 'review-actions' }, [
           ...suggestions.map((s) => el('button', { type: 'button', class: 'btn btn-sm btn-primary', onClick: () => fileItem(item, s.collectionId, true) }, [`Move to ${s.collectionName}`])),
           select,
-          el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: async () => {
-            await store.updateItem(item.id, { needsReview: false });
-            UI.toast('Kept in Inbox.', { duration: 1500 });
-          } }, ['Keep in Inbox']),
-          el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => openItem(item.id) }, ['Details']),
+          el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => openQuickView(item.id) }, ['Details']),
           el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => deleteItems([item]) }, ['Delete']),
         ]),
       ]),
@@ -1229,7 +1233,7 @@ function renderWelcome(view) {
     el('div', { class: 'steps' }, [
       step(1, 'Pin the icon', 'Click the puzzle-piece in Chrome’s toolbar and pin Keepsake so it’s one click away. Alt+Shift+K opens it too.'),
       step(2, 'Save from any page', 'On a product page, click the icon. Keepsake reads the title, price and image, picks a collection and shows you before saving.'),
-      step(3, 'Let it learn', 'Move an item and Keepsake remembers. Unsure saves wait in the Inbox instead of guessing.'),
+      step(3, 'Let it learn', 'Move an item and Keepsake remembers. Unsure saves wait in Review instead of guessing.'),
       step(4, 'Optional extras', 'On-page save buttons for product grids, and an Instagram Saved-collection importer — both off until you turn them on.'),
     ]),
   ]);

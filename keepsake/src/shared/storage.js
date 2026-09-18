@@ -12,7 +12,7 @@
 
 import { uid, nowIso, sanitizeText, sanitizeUrl, deepMerge, hostnameOf, prettyRetailer } from './util.js';
 import { normalizeUrl, cleanUrl } from './url.js';
-import { DEFAULT_TAXONOMY, INBOX_COLLECTION, INBOX_KEY } from './taxonomy.js';
+import { DEFAULT_TAXONOMY } from './taxonomy.js';
 import { emptyPrefs, findSimilarCollection, learnFromCorrection, forgetCollection } from './categorizer.js';
 
 export const SCHEMA_VERSION = 1;
@@ -322,11 +322,6 @@ export function createStore(backend) {
       return collections[id] || null;
     },
 
-    async getInbox() {
-      const cols = await api.getCollections();
-      return cols.find((c) => c.taxonomyKey === INBOX_KEY) || null;
-    },
-
     // Creates a collection unless a similar one exists (returns the existing one then).
     async createCollection(input, { allowSimilar = false } = {}) {
       return serial(async () => {
@@ -346,7 +341,7 @@ export function createStore(backend) {
     },
 
     async ensureCollectionForTaxonomy(taxonomyKey) {
-      const tax = DEFAULT_TAXONOMY.find((t) => t.key === taxonomyKey) || (taxonomyKey === INBOX_KEY ? INBOX_COLLECTION : null);
+      const tax = DEFAULT_TAXONOMY.find((t) => t.key === taxonomyKey);
       if (!tax) return null;
       const cols = await api.getCollections();
       const exact = cols.find((c) => c.taxonomyKey === tax.key);
@@ -373,10 +368,10 @@ export function createStore(backend) {
       return serial(async () => {
         const { collections } = await readAll();
         // Listed ids come first in the given order; anything not listed keeps
-        // its current relative order behind them. Inbox always stays last.
-        const listed = orderedIds.filter((id) => collections[id] && collections[id].taxonomyKey !== INBOX_KEY);
+        // its current relative order behind them.
+        const listed = orderedIds.filter((id) => collections[id]);
         const rest = sortCollections(Object.values(collections))
-          .filter((c) => !listed.includes(c.id) && c.taxonomyKey !== INBOX_KEY)
+          .filter((c) => !listed.includes(c.id))
           .map((c) => c.id);
         [...listed, ...rest].forEach((id, i) => {
           collections[id].sortOrder = i + 1;
@@ -386,20 +381,19 @@ export function createStore(backend) {
       });
     },
 
-    // Deleting moves items to Inbox (or `moveTo`) unless deleteItems is true.
+    // Deleting uncategorizes its items (or moves them to `moveTo`) unless deleteItems is true.
     async deleteCollection(id, { moveTo = null, deleteItems = false } = {}) {
       return serial(async () => {
         const data = await readAll();
         const col = data.collections[id];
         if (!col) return;
-        if (col.taxonomyKey === INBOX_KEY) throw new Error('The Inbox cannot be deleted');
-        const inbox = Object.values(data.collections).find((c) => c.taxonomyKey === INBOX_KEY);
-        const target = moveTo && data.collections[moveTo] ? moveTo : inbox ? inbox.id : null;
+        const target = moveTo && data.collections[moveTo] ? moveTo : null;
         for (const item of Object.values(data.items)) {
           if (item.collectionId !== id) continue;
           if (deleteItems) delete data.items[item.id];
           else {
             item.collectionId = target;
+            item.needsReview = item.needsReview || !target;
             item.previousCollections = [...(item.previousCollections || []), id].slice(-20);
             item.updatedAt = nowIso();
           }
@@ -416,7 +410,6 @@ export function createStore(backend) {
         const source = data.collections[sourceId];
         const target = data.collections[targetId];
         if (!source || !target || sourceId === targetId) throw new Error('Pick two different collections');
-        if (source.taxonomyKey === INBOX_KEY) throw new Error('The Inbox cannot be merged away');
         for (const item of Object.values(data.items)) {
           if (item.collectionId === sourceId) {
             item.collectionId = targetId;
@@ -611,13 +604,14 @@ export function createStore(backend) {
           addedCollections++;
         }
         const existingKeys = new Set(Object.values(items).map((i) => i.urlKey).filter(Boolean));
-        const inbox = Object.values(collections).find((c) => c.taxonomyKey === INBOX_KEY);
         for (const item of Object.values(validated.items)) {
           if (items[item.id] || (item.urlKey && existingKeys.has(item.urlKey))) {
             skippedItems++;
             continue;
           }
-          item.collectionId = idMap.get(item.collectionId) || (collections[item.collectionId] ? item.collectionId : inbox ? inbox.id : null);
+          const resolvedId = idMap.get(item.collectionId) || (collections[item.collectionId] ? item.collectionId : null);
+          item.collectionId = resolvedId;
+          if (!resolvedId) item.needsReview = true;
           items[item.id] = item;
           if (item.urlKey) existingKeys.add(item.urlKey);
           addedItems++;
@@ -630,10 +624,6 @@ export function createStore(backend) {
           for (const [k, v] of Object.entries(validated.importHistory.instagram)) if (items[v]) importHistory.instagram[k] = v;
         }
         const settings = mode === 'replace' && validated.settings ? deepMerge(DEFAULT_SETTINGS, validated.settings) : data.settings;
-        if (!Object.values(collections).some((c) => c.taxonomyKey === INBOX_KEY)) {
-          const inboxCol = makeCollection({ ...INBOX_COLLECTION, taxonomyKey: INBOX_KEY, sortOrder: 999 });
-          collections[inboxCol.id] = inboxCol;
-        }
         await be.set({
           [KEYS.collections]: collections, [KEYS.items]: items, [KEYS.prefs]: prefs, [KEYS.settings]: settings, [KEYS.importHistory]: importHistory,
           [KEYS.meta]: { ...(data.meta || {}), schemaVersion: SCHEMA_VERSION, updatedAt: nowIso() },
@@ -643,8 +633,14 @@ export function createStore(backend) {
     },
 
     async loadSampleData() {
+      // Sample data spans more than the starter collections, so create the rest
+      // of the default taxonomy entries it references on demand (this also
+      // demonstrates auto-created collections). ensureCollectionForTaxonomy is
+      // a no-op for ones that already exist.
+      const neededKeys = ['home', 'camping', 'clothing', 'tech', 'kitchen', 'van', 'care', 'books', 'tools', 'travel'];
+      for (const k of neededKeys) await api.ensureCollectionForTaxonomy(k);
       const cols = await api.getCollections();
-      const byKey = (k) => cols.find((c) => c.taxonomyKey === k) || cols[0];
+      const byKey = (k) => cols.find((c) => c.taxonomyKey === k) || null;
       const samples = sampleItems(byKey);
       for (const s of samples) await api.addItem(s);
       return samples.length;
@@ -664,22 +660,24 @@ export function createStore(backend) {
 }
 
 function sortCollections(list) {
-  return list.sort((a, b) => {
-    const ai = a.taxonomyKey === INBOX_KEY ? 1 : 0;
-    const bi = b.taxonomyKey === INBOX_KEY ? 1 : 0;
-    if (ai !== bi) return ai - bi; // Inbox last
-    return (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name);
-  });
+  return list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name));
 }
+
+// Only a small starter set is pre-created on first install. The rest of
+// DEFAULT_TAXONOMY still exists and is used for auto-categorization —
+// ensureCollectionForTaxonomy() creates those collections on demand the
+// first time an item actually matches one (see categorizer.js). Items
+// Keepsake can't place confidently are simply left uncategorized
+// (collectionId: null) and surface in the Review queue — there is no
+// separate "Inbox" collection to keep in sync.
+const STARTER_TAXONOMY_KEYS = ['home', 'clothing', 'tech'];
 
 export function defaultCollections() {
   const out = {};
-  DEFAULT_TAXONOMY.forEach((t, i) => {
+  DEFAULT_TAXONOMY.filter((t) => STARTER_TAXONOMY_KEYS.includes(t.key)).forEach((t, i) => {
     const c = makeCollection({ name: t.name, description: t.description, color: t.color, aliases: t.aliases, taxonomyKey: t.key, sortOrder: i + 1 });
     out[c.id] = c;
   });
-  const inbox = makeCollection({ name: INBOX_COLLECTION.name, description: INBOX_COLLECTION.description, color: INBOX_COLLECTION.color, aliases: INBOX_COLLECTION.aliases, taxonomyKey: INBOX_KEY, sortOrder: 999 });
-  out[inbox.id] = inbox;
   return out;
 }
 
@@ -786,7 +784,8 @@ function safeId(id) {
 
 function sampleItems(byKey) {
   const d = (daysAgo) => new Date(Date.now() - daysAgo * 864e5).toISOString();
-  const S = (key, o, days) => ({ ...o, collectionId: byKey(key)?.id || null, createdAt: d(days), confidence: o.confidence ?? 0.82, categorizationSource: 'sample' });
+  // A null key means "leave uncategorized" — the item shows up in Review.
+  const S = (key, o, days) => ({ ...o, collectionId: key ? byKey(key)?.id || null : null, createdAt: d(days), confidence: o.confidence ?? 0.82, categorizationSource: 'sample' });
   return [
     S('home', { title: 'Hand-thrown ceramic bedside lamp with linen shade', price: 148, currency: 'USD', retailer: 'Studio Fenne', url: 'https://example.com/lamps/ceramic-bedside', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800', imageAspect: 0.8, favorite: true, description: 'Matte glaze, dimmable warm bulb included.' }, 1),
     S('camping', { title: 'Two-person ultralight backpacking tent', price: 329, currency: 'USD', retailer: 'North Ridge Outfitters', url: 'https://example.com/tents/ultralight-2p', image: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800', imageAspect: 1.5, description: 'Trail weight 2 lb 3 oz. Two doors, two vestibules.' }, 2),
@@ -795,7 +794,7 @@ function sampleItems(byKey) {
     S('kitchen', { title: 'Enameled cast iron Dutch oven, 5.5 qt', price: 199, currency: 'USD', retailer: 'Copper Lane Kitchen', url: 'https://example.com/cookware/dutch-oven', image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=800', imageAspect: 1.2, note: 'Wait for the autumn sale.' }, 6),
     S('van', { title: '12V roof fan with rain sensor, fits ProMaster', price: 289, currency: 'USD', retailer: 'Overland Supply Co.', url: 'https://example.com/van/roof-fan-12v', image: '', imageAspect: null }, 8),
     S('care', { title: 'Mineral SPF 40 daily moisturizer', price: 32, currency: 'USD', retailer: 'Clearwater Skin', url: 'https://example.com/skin/spf40', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800', imageAspect: 1.25 }, 9),
-    S('inbox', { title: 'Morning light, kitchen corner', type: 'instagram', retailer: 'Instagram', url: 'https://www.instagram.com/p/sample000001/', image: 'https://images.unsplash.com/photo-1484101403633-562f891dc89a?w=800', imageAspect: 0.9, confidence: 0.2, needsReview: true, categorizationReason: 'No category signals found in the caption', instagram: { collectionName: 'Kitchen ideas', creator: 'slowmornings', caption: 'Morning light in the kitchen corner ✨', postType: 'post' } }, 10),
+    S(null, { title: 'Morning light, kitchen corner', type: 'instagram', retailer: 'Instagram', url: 'https://www.instagram.com/p/sample000001/', image: 'https://images.unsplash.com/photo-1484101403633-562f891dc89a?w=800', imageAspect: 0.9, confidence: 0.2, needsReview: true, categorizationReason: 'No category signals found in the caption', instagram: { collectionName: 'Kitchen ideas', creator: 'slowmornings', caption: 'Morning light in the kitchen corner ✨', postType: 'post' } }, 10),
     S('books', { title: 'A Pattern Language — hardcover, 1977 edition', price: 68, currency: 'USD', retailer: 'Riverbend Books', url: 'https://example.com/books/a-pattern-language', image: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=800', imageAspect: 0.7 }, 12),
     S('tools', { title: 'Cordless brushless drill driver kit, 18V', price: 159, currency: 'USD', retailer: 'Workbench Depot', url: 'https://example.com/tools/drill-18v', image: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800', imageAspect: 1.4 }, 14),
     S('travel', { title: 'Carry-on suitcase with front laptop pocket', price: 275, currency: 'USD', retailer: 'Northline Luggage', url: 'https://example.com/travel/carry-on-front-pocket', image: 'https://images.unsplash.com/photo-1553531384-cc64ac80f931?w=800', imageAspect: 0.8 }, 20),

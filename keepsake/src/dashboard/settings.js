@@ -168,7 +168,7 @@ function floatingSection(ctx) {
       UI.settingRow('Button position', UI.selectInput({ value: s.position, options: [{ value: 'top-right', label: 'Top right of card' }, { value: 'top-left', label: 'Top left' }, { value: 'bottom-right', label: 'Bottom right' }, { value: 'bottom-left', label: 'Bottom left' }], onChange: (v) => ctx.store.updateSettings({ floating: { position: v } }), label: 'Button position' })),
       UI.settingRow('Ask before saving', UI.switchInput({ checked: s.requireConfirm, onChange: (v) => ctx.store.updateSettings({ floating: { requireConfirm: v } }), label: 'Ask before saving' }), 'Show a collection picker instead of saving instantly.'),
       UI.settingRow('Auto-file confident saves', UI.switchInput({ checked: s.autoSaveHighConfidence, onChange: (v) => ctx.store.updateSettings({ floating: { autoSaveHighConfidence: v } }), label: 'Auto-file confident saves' }), 'When off, every on-page save asks which collection to use.'),
-      UI.settingRow('Send uncertain saves to Inbox', UI.switchInput({ checked: s.uncertainToInbox, onChange: (v) => ctx.store.updateSettings({ floating: { uncertainToInbox: v } }), label: 'Send uncertain saves to Inbox' }), 'When off, Keepsake asks you to pick a collection for low-confidence saves.'),
+      UI.settingRow('Leave uncertain saves for Review', UI.switchInput({ checked: s.uncertainToInbox, onChange: (v) => ctx.store.updateSettings({ floating: { uncertainToInbox: v } }), label: 'Leave uncertain saves for Review' }), 'When off, Keepsake asks you to pick a collection for low-confidence saves.'),
     ]);
     box.append(rows);
     box.append(el('p', { class: 'help' }, ['Pressing Alt+Shift+S on a page with buttons enabled saves the card you are hovering or focused on.']));
@@ -189,8 +189,8 @@ function categorizationSection(ctx) {
     const val = el('span', { class: 'slider-value' }, [`${Math.round(threshold * 100)}%`]);
     range.addEventListener('input', () => { val.textContent = `${Math.round(Number(range.value) * 100)}%`; });
     range.addEventListener('change', () => ctx.store.updatePrefs({ confidenceThreshold: Number(range.value) }));
-    box.append(UI.settingRow('Confidence needed to auto-file', el('div', { class: 'slider-row' }, [range, val]), 'Below this, saves go to the Inbox for you to sort. Higher = more Inbox, fewer mistakes.'));
-    box.append(UI.settingRow('Create default collections on demand', UI.switchInput({ checked: prefs.autoCreateCollections !== false, onChange: (v) => ctx.store.updatePrefs({ autoCreateCollections: v }), label: 'Create default collections on demand' }), 'If you deleted a default collection and a matching item shows up later, Keepsake can recreate it instead of using the Inbox.'));
+    box.append(UI.settingRow('Confidence needed to auto-file', el('div', { class: 'slider-row' }, [range, val]), 'Below this, saves are left uncategorized and wait in Review. Higher = more items in Review, fewer mistakes.'));
+    box.append(UI.settingRow('Create default collections on demand', UI.switchInput({ checked: prefs.autoCreateCollections !== false, onChange: (v) => ctx.store.updatePrefs({ autoCreateCollections: v }), label: 'Create default collections on demand' }), 'If you deleted a default collection and a matching item shows up later, Keepsake can recreate it instead of leaving the item uncategorized.'));
 
     // Rules
     const rules = prefs.rules || [];
@@ -243,7 +243,6 @@ function categorizationSection(ctx) {
 
 function collectionsSection(ctx) {
   const cols = ctx.regularCollections();
-  const inbox = ctx.inbox();
   const counts = new Map();
   for (const i of ctx.state.items) counts.set(i.collectionId, (counts.get(i.collectionId) || 0) + 1);
   const rows = cols.map((c) => el('tr', {}, [
@@ -251,9 +250,9 @@ function collectionsSection(ctx) {
     el('td', {}, [String(counts.get(c.id) || 0)]),
     el('td', {}, [(c.keywords || []).slice(0, 5).join(', ') || el('span', { class: 'muted' }, ['—'])]),
   ]));
-  return UI.section('Collections', `${pluralize(cols.length, 'collection', 'collections')} plus the Inbox. Rename, merge, edit keywords or delete a collection from its page.`, [
+  return UI.section('Collections', `${pluralize(cols.length, 'collection', 'collections')}. Rename, merge, edit keywords or delete a collection from its page.`, [
     el('div', { class: 'table-wrap' }, [el('table', { class: 'table' }, [el('thead', {}, [el('tr', {}, [el('th', {}, ['Name']), el('th', {}, ['Items']), el('th', {}, ['Your keywords'])])]), el('tbody', {}, rows)])]),
-    el('p', { class: 'help' }, [`Inbox holds ${counts.get(inbox?.id) || 0} items. Collections with similar names are merged automatically when created.`]),
+    el('p', { class: 'help' }, [`${pluralize(counts.get(null) || 0, 'item', 'items')} uncategorized, waiting in Review. Collections with similar names are merged automatically when created.`]),
   ]);
 }
 
@@ -493,7 +492,7 @@ export function renderAI(ctx, view) {
 
     box.append(UI.section('Features', '', [
       UI.settingRow('Find products in Instagram saves (beta)', UI.switchInput({ checked: ai.enabled, onChange: async (v, input) => { if (!(await enableFeature('enabled', v))) input.checked = !v; }, label: 'Find products in Instagram saves' }), 'Adds a “Find products” button to imported posts. Off by default.'),
-      UI.settingRow('Categorization assist', UI.switchInput({ checked: ai.useForCategorization, onChange: async (v, input) => { if (!(await enableFeature('useForCategorization', v))) input.checked = !v; }, label: 'Categorization assist' }), 'Only runs when a save would otherwise land in the Inbox.'),
+      UI.settingRow('Categorization assist', UI.switchInput({ checked: ai.useForCategorization, onChange: async (v, input) => { if (!(await enableFeature('useForCategorization', v))) input.checked = !v; }, label: 'Categorization assist' }), 'Only runs when a save would otherwise be left uncategorized.'),
     ]));
   };
   draw();

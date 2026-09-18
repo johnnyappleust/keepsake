@@ -21,7 +21,7 @@
 // The engine is deterministic, runs entirely locally and never touches the network.
 // An optional AI provider (src/ai/provider.js) can be layered on top by callers.
 
-import { DEFAULT_TAXONOMY, INBOX_COLLECTION, INBOX_KEY, STOPWORDS } from './taxonomy.js';
+import { DEFAULT_TAXONOMY, STOPWORDS } from './taxonomy.js';
 
 const FIELD_WEIGHTS = {
   title: 3,
@@ -143,7 +143,6 @@ export function findSimilarCollection(name, collections, threshold = 0.8) {
 // Map a user collection onto a default taxonomy entry so it inherits keywords.
 export function resolveTaxonomy(collection) {
   if (!collection) return null;
-  if (collection.taxonomyKey === INBOX_KEY) return INBOX_COLLECTION;
   if (collection.taxonomyKey) {
     const t = DEFAULT_TAXONOMY.find((x) => x.key === collection.taxonomyKey);
     if (t) return t;
@@ -221,12 +220,11 @@ function buildCandidates(collections, prefs, settings) {
   const covered = new Set();
   for (const c of collections) {
     const tax = resolveTaxonomy(c);
-    if (tax && tax.key !== INBOX_KEY) covered.add(tax.key);
+    if (tax) covered.add(tax.key);
     candidates.push({
       id: c.id,
       name: c.name,
       taxonomyKey: tax ? tax.key : null,
-      isInbox: c.taxonomyKey === INBOX_KEY || (tax && tax.key === INBOX_KEY),
       virtual: false,
       strong: tax ? tax.strong : [],
       regular: tax ? tax.keywords : [],
@@ -242,7 +240,6 @@ function buildCandidates(collections, prefs, settings) {
         id: null,
         name: t.name,
         taxonomyKey: t.key,
-        isInbox: false,
         virtual: true,
         strong: t.strong,
         regular: t.keywords,
@@ -330,14 +327,13 @@ export function classify(product, context = {}) {
   const settings = context.settings || {};
   const threshold = Number.isFinite(Number(prefs.confidenceThreshold)) ? Number(prefs.confidenceThreshold) : 0.6;
 
-  const inbox = collections.find((c) => c.taxonomyKey === INBOX_KEY) || null;
   const fields = fieldsOf(product);
   const candidates = buildCandidates(collections, prefs, settings);
 
   // 1. Instagram collection name that matches an existing collection => direct hit.
   const igName = product?.instagram?.collectionName;
   if (igName) {
-    const direct = findSimilarCollection(igName, collections.filter((c) => c.taxonomyKey !== INBOX_KEY), 0.85);
+    const direct = findSimilarCollection(igName, collections, 0.85);
     if (direct) {
       return finish({
         collectionId: direct.id, collectionName: direct.name, taxonomyKey: direct.taxonomyKey || null,
@@ -349,7 +345,6 @@ export function classify(product, context = {}) {
   // 2. Keyword scoring.
   let all = [];
   candidates.forEach((cand, i) => {
-    if (cand.isInbox) return;
     all = all.concat(collectMatches(cand, i, fields, prefs));
   });
   all = applyDominance(all);
@@ -381,7 +376,7 @@ export function classify(product, context = {}) {
 
   const ranked = candidates
     .map((cand, i) => ({ cand, score: scores[i], why: explain[i] }))
-    .filter((r) => !r.cand.isInbox && r.score > 0)
+    .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score || (a.cand.virtual === b.cand.virtual ? 0 : a.cand.virtual ? 1 : -1));
 
   const alternatives = ranked.slice(0, 4).map((r) => ({
@@ -390,8 +385,8 @@ export function classify(product, context = {}) {
 
   if (!ranked.length) {
     return finish({
-      collectionId: inbox ? inbox.id : null, collectionName: inbox ? inbox.name : 'Inbox', taxonomyKey: INBOX_KEY,
-      confidence: 0, reason: 'No category signals found in the product text', isNew: !inbox, isInbox: true, alternatives,
+      collectionId: null, collectionName: 'Review', taxonomyKey: null,
+      confidence: 0, reason: 'No category signals found in the product text', isNew: false, isInbox: true, alternatives,
     });
   }
 
@@ -408,9 +403,9 @@ export function classify(product, context = {}) {
   const reason = describeWhy(top.why);
   if (confidence < threshold) {
     return finish({
-      collectionId: inbox ? inbox.id : null, collectionName: inbox ? inbox.name : 'Inbox', taxonomyKey: INBOX_KEY,
+      collectionId: null, collectionName: 'Review', taxonomyKey: null,
       confidence, reason: `Low confidence (${Math.round(confidence * 100)}%) for “${top.cand.name}”: ${reason}`,
-      isNew: !inbox, isInbox: true, alternatives, suggested: alternatives[0] || null,
+      isNew: false, isInbox: true, alternatives, suggested: alternatives[0] || null,
     });
   }
 

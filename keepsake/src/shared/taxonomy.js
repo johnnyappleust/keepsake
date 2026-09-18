@@ -5,8 +5,9 @@
 // `keywords` are matched as whole words/phrases in product text. A trailing
 // `*` allows a prefix match (e.g. "lamp*" matches lamp, lamps, lampshade).
 // `strong` keywords are near-unambiguous and lift confidence on their own.
-
-export const INBOX_KEY = 'inbox';
+//
+// There is no "Inbox" taxonomy entry: items Keepsake can't confidently place
+// are simply left uncategorized (collectionId: null) and surface in Review.
 
 export const DEFAULT_TAXONOMY = [
   {
@@ -33,8 +34,8 @@ export const DEFAULT_TAXONOMY = [
     description: 'Shoes, jackets, tops, pants, dresses, accessories and everything you wear.',
     color: '#8B6F8F',
     aliases: ['clothes', 'clothing', 'apparel', 'fashion', 'wardrobe', 'outfits', 'style', 'shoes', 'footwear', 'accessories', 'wear', 'menswear', 'womenswear'],
-    strong: ['jacket', 'jackets', 'coat', 'parka', 'puffer', 'hoodie', 'sweatshirt', 'sweater', 'jumper', 'cardigan', 'shirt', 't-shirt', 'tee', 'blouse', 'pants', 'trousers', 'jeans', 'denim', 'chinos', 'shorts', 'skirt', 'dress', 'sneakers', 'trainers', 'shoes', 'boots', 'loafers', 'sandals', 'heels', 'running shoes', 'trail runners', 'socks', 'beanie', 'scarf', 'gloves', 'mittens', 'leggings', 'joggers', 'sweatpants', 'blazer', 'suit', 'vest', 'gilet', 'fleece', 'raincoat', 'anorak', 'windbreaker', 'bra', 'underwear', 'boxers', 'swimsuit', 'bikini', 'trunks', 'overalls', 'jumpsuit', 'romper', 'polo', 'oxford shirt', 'flannel', 'cap', 'bucket hat', 'belt', 'wallet', 'sunglasses', 'watch', 'tote bag', 'crossbody', 'handbag', 'backpack purse', 'earrings', 'necklace', 'bracelet', 'ring'],
-    keywords: ['wear', 'outfit', 'apparel', 'fit', 'size', 'sizing', 'xs', 'xl', 'xxl', 'mens', "men's", 'womens', "women's", 'unisex', 'cotton', 'wool', 'merino', 'cashmere', 'linen shirt', 'knit', 'knitwear', 'sleeve', 'long sleeve', 'short sleeve', 'crewneck', 'crew neck', 'v-neck', 'turtleneck', 'slim fit', 'relaxed fit', 'regular fit', 'high-rise', 'mid-rise', 'straight leg', 'wide leg', 'bootcut', 'waterproof jacket', 'gore-tex', 'down jacket', 'insulated jacket', 'nike', 'adidas', 'new balance', 'salomon', 'hoka', 'brooks', 'birkenstock', 'uniqlo', 'zara', 'levi*', 'carhartt', 'patagonia', 'arcteryx', "arc'teryx", 'lululemon', 'hat', 'jewelry', 'jewellery'],
+    strong: ['jacket', 'jackets', 'coat', 'parka', 'puffer', 'hoodie', 'sweatshirt', 'sweater', 'jumper', 'cardigan', 'shirt', 't-shirt', 'tee', 'blouse', 'pants', 'trousers', 'jeans', 'denim', 'chinos', 'shorts', 'skirt', 'dress', 'sneakers', 'trainers', 'shoes', 'boots', 'loafers', 'sandals', 'heels', 'running shoes', 'trail runners', 'socks', 'beanie', 'scarf', 'gloves', 'mittens', 'leggings', 'joggers', 'sweatpants', 'blazer', 'suit', 'vest', 'gilet', 'fleece', 'raincoat', 'anorak', 'windbreaker', 'bra', 'underwear', 'boxers', 'swimsuit', 'bikini', 'trunks', 'overalls', 'jumpsuit', 'romper', 'polo', 'oxford shirt', 'flannel', 'cap', 'bucket hat', 'belt', 'wallet', 'sunglasses', 'tote bag', 'crossbody', 'handbag', 'backpack purse'],
+    keywords: ['wear', 'outfit', 'apparel', 'fit', 'size', 'sizing', 'xs', 'xl', 'xxl', 'mens', "men's", 'womens', "women's", 'unisex', 'cotton', 'wool', 'merino', 'cashmere', 'linen shirt', 'knit', 'knitwear', 'sleeve', 'long sleeve', 'short sleeve', 'crewneck', 'crew neck', 'v-neck', 'turtleneck', 'slim fit', 'relaxed fit', 'regular fit', 'high-rise', 'mid-rise', 'straight leg', 'wide leg', 'bootcut', 'waterproof jacket', 'gore-tex', 'down jacket', 'insulated jacket', 'nike', 'adidas', 'new balance', 'salomon', 'hoka', 'brooks', 'birkenstock', 'uniqlo', 'zara', 'levi*', 'carhartt', 'patagonia', 'arcteryx', "arc'teryx", 'lululemon', 'hat'],
   },
   {
     key: 'tech',
@@ -78,7 +79,7 @@ export const DEFAULT_TAXONOMY = [
     description: 'Books, vinyl, magazines, games and films worth remembering.',
     color: '#8A7B66',
     aliases: ['books', 'book', 'reading', 'library', 'media', 'to read', 'reading list', 'vinyl', 'records', 'music', 'movies', 'films', 'games', 'board games'],
-    strong: ['book', 'books', 'novel', 'paperback', 'hardcover', 'hardback', 'audiobook', 'e-book', 'ebook', 'cookbook', 'memoir', 'biography', 'anthology', 'graphic novel', 'manga', 'comic', 'vinyl', 'vinyl record', 'lp', 'record', 'album', 'cd', 'cassette', 'blu-ray', 'bluray', 'dvd', 'box set', 'boxset', 'board game', 'card game', 'puzzle', 'jigsaw', 'magazine', 'zine', 'journal', 'notebook', 'sketchbook', 'planner', 'field notes', 'moleskine', 'leuchtturm', 'stationery', 'fountain pen', 'pen'],
+    strong: ['book', 'books', 'novel', 'paperback', 'hardcover', 'hardback', 'audiobook', 'e-book', 'ebook', 'cookbook', 'memoir', 'biography', 'anthology', 'graphic novel', 'manga', 'comic', 'vinyl', 'vinyl record', 'lp', 'record', 'album', 'cd', 'cassette', 'blu-ray', 'bluray', 'dvd', 'box set', 'boxset', 'board game', 'card game', 'puzzle', 'jigsaw', 'magazine', 'zine'],
     keywords: ['author', 'edition', 'isbn', 'pages', 'chapter*', 'read', 'reading', 'publisher', 'penguin', 'fiction', 'nonfiction', 'non-fiction', 'poetry', 'essays', 'literature', 'bestseller', 'kindle edition', 'press', 'illustrated', 'volume', 'series', 'soundtrack', 'ost', 'reissue', 'remaster*', 'pressing', '180g', 'players', 'expansion', 'tabletop', 'rpg', 'dice'],
   },
   {
@@ -88,7 +89,7 @@ export const DEFAULT_TAXONOMY = [
     color: '#B57B8F',
     aliases: ['gifts', 'gift', 'gift ideas', 'presents', 'present', 'for others', 'birthday', 'christmas', 'holiday gifts', 'wishlist for others'],
     strong: ['gift', 'gifts', 'gift set', 'gift box', 'gift basket', 'gift card', 'gift for', 'present for', 'stocking stuffer*', 'secret santa', 'anniversary gift', 'wedding gift', 'birthday gift', 'gift idea*', 'gift guide'],
-    keywords: ['for him', 'for her', 'for mom', 'for dad', 'for kids', 'for couples', 'for the', 'personalized', 'personalised', 'engraved', 'custom', 'monogram*', 'novelty', 'keepsake', 'hamper', 'greeting card', 'wrapping', 'ribbon', 'holiday'],
+    keywords: ['for him', 'for her', 'for mom', 'for dad', 'for kids', 'for couples', 'for the', 'personalized', 'personalised', 'engraved', 'custom', 'monogram*', 'novelty', 'keepsake', 'hamper'],
   },
   {
     key: 'travel',
@@ -108,17 +109,106 @@ export const DEFAULT_TAXONOMY = [
     strong: ['drill', 'cordless drill', 'impact driver', 'circular saw', 'miter saw', 'mitre saw', 'table saw', 'jigsaw', 'jig saw', 'reciprocating saw', 'track saw', 'band saw', 'bandsaw', 'router', 'wood router', 'orbital sander', 'belt sander', 'planer', 'jointer', 'lathe', 'chisel', 'chisel set', 'hand plane', 'block plane', 'hammer', 'mallet', 'screwdriver', 'screwdriver set', 'wrench', 'wrench set', 'socket set', 'ratchet', 'torque wrench', 'pliers', 'needle nose', 'wire cutter*', 'wire stripper*', 'crimper', 'crimping tool', 'multimeter', 'soldering iron', 'heat gun', 'level', 'spirit level', 'laser level', 'tape measure', 'measuring tape', 'square', 'speed square', 'combination square', 'clamp', 'clamps', 'bar clamp', 'vise', 'vice', 'workbench', 'sawhorse', 'tool chest', 'tool box', 'toolbox', 'tool bag', 'tool belt', 'shop vac', 'dust collector', 'angle grinder', 'oscillating tool', 'multi tool', 'nail gun', 'brad nailer', 'staple gun', 'rivet gun', 'pocket hole jig', 'kreg', 'dewalt', 'milwaukee', 'makita', 'bosch', 'ryobi', 'festool', 'hilti', 'knipex', 'wera', 'wiha', 'klein tools', 'stanley', 'irwin', 'estwing'],
     keywords: ['tool*', 'cordless', 'brushless', '18v', '20v', 'battery platform', 'bit set', 'drill bit*', 'saw blade*', 'sandpaper', 'abrasive', 'workshop', 'garage', 'diy', 'woodworking', 'carpentry', 'hardware', 'fastener*', 'screws', 'bolts', 'anchors', 'lumber', 'metalworking', 'welding', 'welder', 'shop', 'jig', 'fence', 'dust', 'safety glasses', 'work gloves', 'ear protection', 'respirator'],
   },
+  {
+    key: 'weddings',
+    name: 'Weddings',
+    description: 'Dresses, rings, invitations, registry finds and everything for the big day.',
+    color: '#C9899A',
+    aliases: ['wedding', 'weddings', 'bride', 'bridal', 'groom', 'engagement', 'bachelorette', 'bachelor party', 'registry', 'save the date'],
+    strong: ['wedding dress', 'bridal gown', 'bridesmaid dress', 'groomsmen gift*', 'wedding invitation*', 'save the date', 'wedding band', 'engagement ring', 'wedding ring', 'bridal shower', 'bachelorette party', 'bachelor party', 'wedding favor*', 'wedding centerpiece*', 'bridal veil', 'tuxedo rental', 'wedding registry', 'cake topper', 'unity candle', 'ring bearer pillow', 'flower girl dress', 'bridal robe', 'wedding guest book', 'seating chart', 'wedding arch', 'ceremony backdrop', 'bridal party gift*'],
+    keywords: ['bride', 'bridal', 'groom', 'groomsmen', 'bridesmaid*', 'fiancé', 'fiancée', 'engaged', 'engagement', 'proposal', 'venue', 'officiant', 'ceremony', 'reception', 'vows', 'wedding planner', 'tux', 'tuxedo', 'boutonniere', 'bouquet', 'floral arrangement', 'registry', 'honeymoon', 'elopement', 'destination wedding', 'wedding shoes', 'garter'],
+  },
+  {
+    key: 'baby',
+    name: 'Baby & Kids',
+    description: 'Nursery decor, baby gear, toys and clothing for little ones.',
+    color: '#9FB3A8',
+    aliases: ['baby', 'babies', 'infant', 'newborn', 'nursery', 'toddler', 'kids', 'children', 'parenting', 'kid stuff'],
+    strong: ['crib', 'bassinet', 'changing table', 'diaper bag', 'stroller', 'car seat', 'baby carrier', 'baby monitor', 'high chair', 'booster seat', 'baby bottle*', 'breast pump', 'baby swing', 'bouncer seat', 'play mat', 'play yard', 'pack n play', 'pack and play', 'baby gate', 'onesie*', 'swaddle', 'burp cloth*', 'pacifier', 'teether', 'baby food maker', 'nursing pillow', 'diaper pail', 'baby bathtub', 'crib mattress', 'baby mobile', 'nursery glider', 'kids table and chairs', 'toy chest', 'baby shower gift'],
+    keywords: ['baby', 'babies', 'infant', 'newborn', 'nursery', 'toddler', 'kids*', 'children', 'diaper*', 'onesie*', 'stroller', 'crib', 'lullaby', 'montessori', 'preschool', 'kids room', 'toy*', 'lego', 'building blocks', 'plush', 'stuffed animal', 'baby shower', 'gender reveal', 'booster', 'sippy cup', 'baby proofing', 'night light', 'kids backpack', 'school supplies', 'lunchbox'],
+  },
+  {
+    key: 'pets',
+    name: 'Pets',
+    description: 'Toys, beds, food and gear for dogs, cats and other pets.',
+    color: '#BE9C6B',
+    aliases: ['pets', 'pet', 'dog', 'dogs', 'cat', 'cats', 'puppy', 'kitten', 'pet supplies', 'pet gear'],
+    strong: ['dog bed', 'cat bed', 'dog leash', 'dog collar', 'cat litter box', 'litter box', 'cat tree', 'cat scratcher', 'scratching post', 'dog crate', 'pet carrier', 'dog harness', 'dog food', 'cat food', 'pet food', 'dog toy*', 'cat toy*', 'chew toy*', 'dog bowl', 'cat bowl', 'feeding station', 'pet gate', 'dog house', 'fish tank', 'terrarium', 'bird cage', 'hamster cage', 'flea collar', 'dog treats', 'cat treats', 'pet grooming kit', 'dog shampoo', 'pet stroller', 'automatic feeder', 'pet fountain', 'dog raincoat', 'dog sweater', 'cat tower'],
+    keywords: ['dog', 'dogs', 'cat', 'cats', 'puppy', 'puppies', 'kitten*', 'pet*', 'canine', 'feline', 'leash', 'collar', 'litter', 'aquarium', 'terrarium', 'reptile', 'hamster', 'guinea pig', 'rabbit', 'vet', 'veterinary', 'kennel', 'chewy', 'petco', 'petsmart', 'kong', 'grooming'],
+  },
+  {
+    key: 'fitness',
+    name: 'Fitness & Wellness',
+    description: 'Workout gear, yoga, supplements and equipment for staying active.',
+    color: '#6E9E8C',
+    aliases: ['fitness', 'workout', 'exercise', 'gym', 'wellness', 'yoga', 'training', 'athletic'],
+    strong: ['yoga mat', 'dumbbell*', 'kettlebell*', 'resistance band*', 'treadmill', 'exercise bike', 'stationary bike', 'peloton', 'rowing machine', 'weight bench', 'squat rack', 'power rack', 'jump rope', 'foam roller', 'pull-up bar', 'ab roller', 'workout gloves', 'gym bag', 'protein powder', 'pre-workout', 'creatine', 'whey protein', 'fitness tracker', 'heart rate monitor', 'gym mat', 'weighted vest', 'medicine ball', 'exercise ball', 'yoga block*', 'yoga strap', 'massage gun', 'compression sleeve*', 'protein shaker', 'elliptical machine', 'barbell', 'lifting belt'],
+    keywords: ['fitness', 'workout', 'exercise', 'gym', 'training', 'cardio', 'strength', 'hiit', 'crossfit', 'pilates', 'yoga', 'meditation', 'stretching', 'mobility', 'recovery', 'muscle', 'reps', 'sets', 'activewear', 'running', 'marathon', 'nutrition', 'supplement*', 'bcaa', 'electrolyte*', 'wellness', 'mindfulness', 'lululemon', 'gymshark', 'nike training'],
+  },
+  {
+    key: 'garden',
+    name: 'Garden & Outdoor Living',
+    description: 'Plants, patio furniture, grills and gear for the yard and garden.',
+    color: '#8DA06E',
+    aliases: ['garden', 'gardening', 'backyard', 'patio', 'outdoor living', 'yard', 'landscaping', 'plants'],
+    strong: ['patio furniture', 'outdoor sofa', 'patio umbrella', 'fire pit table', 'garden hose', 'lawn mower', 'leaf blower', 'hedge trimmer', 'pruning shears', 'garden gloves', 'raised garden bed', 'planter box', 'watering can', 'gas grill', 'charcoal grill', 'smoker grill', 'outdoor rug', 'hammock stand', 'porch swing', 'outdoor string lights', 'garden trellis', 'greenhouse kit', 'compost bin', 'sprinkler system', 'garden gnome', 'bird feeder', 'wind chime', 'outdoor cushion*', 'deck chair', 'adirondack chair', 'garden shed', 'wheelbarrow', 'plant stand', 'seed starter kit', 'potting soil', 'garden tool set', 'weed killer', 'outdoor heater', 'patio heater'],
+    keywords: ['garden*', 'gardening', 'backyard', 'patio', 'yard', 'lawn', 'landscap*', 'flower bed', 'perennial*', 'annual*', 'shrub*', 'mulch', 'topsoil', 'greenhouse', 'grill*', 'bbq', 'barbecue', 'outdoor furniture', 'deck', 'porch', 'pergola', 'gazebo', 'fence', 'irrigation', 'terracotta', 'succulent*', 'hose', 'shovel', 'rake', 'trowel', 'fertilizer'],
+  },
+  {
+    key: 'crafts',
+    name: 'Art & Crafts',
+    description: 'Paint, yarn, fabric and supplies for making things by hand.',
+    color: '#C68B5B',
+    aliases: ['crafts', 'craft supplies', 'diy crafts', 'art supplies', 'crafting', 'handmade', 'hobby', 'sewing', 'knitting'],
+    strong: ['sewing machine', 'embroidery hoop', 'embroidery floss', 'cross stitch', 'knitting needle*', 'crochet hook*', 'yarn skein', 'fabric bolt', 'quilting fabric', 'cricut', 'cricut maker', 'vinyl cutter', 'heat press', 'washi tape', 'scrapbook*', 'acrylic paint', 'watercolor paint', 'oil paint', 'paint brush set', 'canvas panel', 'calligraphy pen', 'glue gun', 'hot glue stick*', 'craft scissors', 'jewelry making kit', 'polymer clay', 'air dry clay', 'pottery wheel', 'craft kiln', 'resin kit', 'epoxy resin', 'stamping ink', 'rubber stamp*', 'stencil*', 'origami paper', 'macrame cord', 'felting wool', 'sewing pattern'],
+    keywords: ['craft*', 'diy', 'handmade', 'sewing', 'knit*', 'crochet', 'quilt*', 'embroidery', 'fabric', 'yarn', 'thread', 'stitch*', 'paint*', 'canvas', 'sketch*', 'drawing', 'illustration', 'watercolor', 'acrylic', 'scrapbooking', 'bead*', 'resin', 'pottery', 'ceramics class', 'hobby lobby', 'michaels', 'joann'],
+  },
+  {
+    key: 'office',
+    name: 'Office & Stationery',
+    description: 'Desk setups, planners, notebooks and supplies for work and study.',
+    color: '#7F8FA0',
+    aliases: ['office', 'stationery', 'desk', 'desk setup', 'workspace', 'school supplies', 'planner', 'office supplies'],
+    strong: ['desk organizer', 'standing desk', 'desk chair', 'office chair', 'monitor arm', 'monitor stand', 'desk mat', 'mouse pad', 'cable organizer', 'daily planner', 'bullet journal', 'fountain pen', 'gel pen*', 'highlighter set', 'sticky note*', 'index card*', 'file folder*', 'label maker', 'paper shredder', 'pencil case', 'binder clip*', 'three ring binder', 'letter tray', 'whiteboard', 'corkboard', 'pin board', 'sticker sheet*', 'notebook set', 'composition notebook', 'legal pad', 'moleskine', 'leuchtturm', 'field notes'],
+    keywords: ['office', 'stationery', 'desk', 'workspace', 'planner', 'notebook', 'journal', 'pen', 'pencil', 'notepad', 'organizer', 'folder*', 'binder', 'sticky note*', 'productivity', 'work from home', 'wfh', 'ergonomic', 'filing', 'school supplies', 'back to school', 'sketchbook', 'staples', 'muji'],
+  },
+  {
+    key: 'auto',
+    name: 'Automotive',
+    description: 'Car care, parts, accessories and gear for your vehicle.',
+    color: '#516472',
+    aliases: ['car', 'cars', 'auto', 'automotive', 'vehicle', 'motorcycle', 'car accessories', 'car care'],
+    strong: ['car cover', 'floor mat*', 'seat cover*', 'dash cam', 'car vacuum', 'jump starter', 'car battery', 'tire inflator', 'car wax', 'car detailing kit', 'microfiber towel*', 'bike rack car', 'trailer hitch', 'phone mount car', 'car charger', 'motor oil', 'windshield wiper*', 'brake pad*', 'spark plug*', 'car air filter', 'car alarm', 'remote start', 'license plate frame', 'steering wheel cover', 'tow strap', 'jumper cable*', 'tire pressure gauge', 'motorcycle helmet', 'motorcycle jacket', 'car wash kit', 'ceramic coating', 'exhaust system', 'performance chip'],
+    keywords: ['car', 'cars', 'auto*', 'vehicle', 'sedan', 'suv', 'truck', 'motorcycle', 'engine', 'horsepower', 'tire*', 'tyre*', 'wheel*', 'rim*', 'detailing', 'garage', 'mechanic', 'dealership', 'mileage', 'mpg', 'ev', 'electric vehicle', 'tesla', 'ev charging cable', 'obd2', 'roof box'],
+  },
+  {
+    key: 'jewelry',
+    name: 'Jewelry & Watches',
+    description: 'Rings, necklaces, watches and fine accessories.',
+    color: '#B39A63',
+    aliases: ['jewelry', 'jewellery', 'watches', 'watch', 'fine jewelry', 'accessories jewelry'],
+    strong: ['necklace', 'pendant necklace', 'bracelet', 'tennis bracelet', 'earrings', 'stud earrings', 'hoop earrings', 'ring', 'wristwatch', 'smartwatch band', 'cufflink*', 'brooch', 'anklet', 'charm bracelet', 'diamond ring', 'gold necklace', 'silver necklace', 'pearl necklace', 'locket', 'signet ring', 'chain necklace', 'ear cuff', 'nose ring', 'body jewelry', 'watch band', 'watch strap'],
+    keywords: ['jewelry', 'jewellery', 'gold', 'silver', 'platinum', 'sterling silver', '14k', '18k', 'karat', 'gemstone', 'diamond', 'sapphire', 'ruby', 'emerald', 'pearl', 'birthstone', 'mejuri', 'kendra scott', 'pandora', 'tiffany', 'cartier', 'rolex', 'omega watch', 'casio', 'citizen watch', 'fossil watch'],
+  },
+  {
+    key: 'music',
+    name: 'Music & Instruments',
+    description: 'Instruments, gear and equipment for playing and recording music.',
+    color: '#7C7398',
+    aliases: ['music', 'musical instrument*', 'instrument', 'band', 'orchestra', 'music gear'],
+    strong: ['electric guitar', 'acoustic guitar', 'bass guitar', 'guitar amp', 'guitar pedal', 'ukulele', 'digital piano', 'keyboard piano', 'drum set', 'drum kit', 'cymbal*', 'violin', 'cello', 'saxophone', 'trumpet', 'clarinet', 'flute', 'harmonica', 'guitar strings', 'guitar case', 'music stand', 'metronome', 'capo', 'guitar pick*', 'audio interface', 'studio monitor*', 'midi keyboard', 'mixing console', 'dj controller', 'record player', 'sheet music', 'tuning pedal'],
+    keywords: ['music', 'musician', 'band practice', 'chord*', 'songwriting', 'recording studio', 'amp*', 'pedal board', 'fender', 'gibson', 'yamaha instrument', 'roland', 'shure', 'audio-technica', 'ableton', 'garageband', 'daw', 'karaoke'],
+  },
+  {
+    key: 'party',
+    name: 'Party & Events',
+    description: 'Decorations, tableware and supplies for parties and celebrations.',
+    color: '#C4785F',
+    aliases: ['party', 'party supplies', 'celebration', 'event', 'birthday party', 'holiday decor', 'decorations'],
+    strong: ['balloon*', 'confetti', 'party favor*', 'piñata', 'pinata', 'party hat*', 'streamers', 'birthday banner', 'cake stand', 'party tablecloth', 'disposable plates', 'party cups', 'birthday candle*', 'gift wrap', 'wrapping paper', 'gift bag*', 'christmas tree', 'christmas ornament*', 'holiday string lights', 'halloween costume', 'easter basket', 'advent calendar', 'stocking*', 'wreath', 'tinsel', 'photo booth prop*', 'party table runner', 'party centerpiece*'],
+    keywords: ['party', 'celebration', 'birthday', 'holiday', 'christmas', 'halloween', 'easter', 'thanksgiving', 'new year*', 'decoration*', 'festive', 'invite*', 'invitation*', 'theme party', 'costume', 'trick or treat', 'santa', 'ornament*', 'garland', 'wrapping', 'ribbon', 'greeting card'],
+  },
 ];
-
-export const INBOX_COLLECTION = {
-  key: INBOX_KEY,
-  name: 'Inbox',
-  description: 'Things Keepsake could not place confidently. Sort them when you have a moment.',
-  color: '#9A9A94',
-  aliases: ['inbox', 'unsorted', 'uncategorized', 'uncategorised', 'to sort', 'misc', 'miscellaneous', 'other'],
-  strong: [],
-  keywords: [],
-};
 
 // Words that are common in product listings but say nothing about category.
 export const STOPWORDS = new Set(('a an the and or of for to in on with by from at as is are be this that these those it its new sale off free shipping best top ' +
@@ -128,6 +218,5 @@ export const STOPWORDS = new Set(('a an the and or of for to in on with by from 
   'small medium large extra xl xs s m l xxl one two three 2 3 4 5 6 10 12 20 24 50 100 amazon com co uk us').split(/\s+/));
 
 export function taxonomyByKey(key) {
-  if (key === INBOX_KEY) return INBOX_COLLECTION;
   return DEFAULT_TAXONOMY.find((t) => t.key === key) || null;
 }

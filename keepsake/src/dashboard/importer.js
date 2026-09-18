@@ -101,7 +101,6 @@ function clearBtn(ctx) {
 }
 
 async function reviewScreen(ctx, page, scan) {
-  const inbox = ctx.inbox();
   const regular = ctx.regularCollections();
   const context = { collections: ctx.state.collections, prefs: ctx.state.prefs, settings: ctx.state.settings };
   const history = (ctx.state.importHistory && ctx.state.importHistory.instagram) || {};
@@ -110,10 +109,11 @@ async function reviewScreen(ctx, page, scan) {
   const igName = scan.collectionName || 'collection';
   const nameMatch = regular.find((c) => c.name.toLowerCase() === igName.toLowerCase()) || findSimilarCollection(igName, regular, 0.85);
   // When the Instagram collection has a name we don't know yet, offer to create
-  // a Keepsake collection with that name (default for posts that would
-  // otherwise land in the Inbox) — the name is the strongest signal we have.
+  // a Keepsake collection with that name (default for posts Keepsake otherwise
+  // can't place) — the name is the strongest signal we have.
   const canCreate = !nameMatch && !!scan.collectionName && !/^all posts$/i.test(igName) && ctx.state.prefs?.autoCreateCollections !== false;
   const createValue = `newname:${igName}`;
+  const NONE = '__none'; // leave uncategorized, for Review
 
   // Classify each post once; the Instagram collection name is a strong signal.
   const rows = scan.posts.map((post) => {
@@ -121,7 +121,7 @@ async function reviewScreen(ctx, page, scan) {
     const cls = classify(product, context);
     const rememberedId = history[normalizeUrl(post.url)];
     const alreadyImported = (!!rememberedId && itemsById.has(rememberedId)) || ctx.state.items.some((i) => i.type === 'instagram' && i.sourceUrl === post.url);
-    let def = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || (inbox ? inbox.id : '');
+    let def = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || NONE;
     if (cls.isInbox && canCreate) def = createValue;
     const existing = selection.get(post.url);
     if (!existing) selection.set(post.url, { selected: !alreadyImported, collectionId: def, defaultChoice: def, touched: false });
@@ -135,7 +135,7 @@ async function reviewScreen(ctx, page, scan) {
   const updateSummary = () => { summary.textContent = `${counts()} of ${scan.posts.length} selected · ${rows.filter((r) => r.alreadyImported).length} already imported`; };
   updateSummary();
 
-  const bulkSel = UI.selectInput({ value: '', options: [{ value: '', label: 'Set collection for all selected…' }, ...regular.map((c) => ({ value: c.id, label: c.name })), canCreate ? { value: createValue, label: `Create “${igName}” (new)` } : null, inbox ? { value: inbox.id, label: inbox.name } : null].filter(Boolean), onChange: (v) => {
+  const bulkSel = UI.selectInput({ value: '', options: [{ value: '', label: 'Set collection for all selected…' }, ...regular.map((c) => ({ value: c.id, label: c.name })), canCreate ? { value: createValue, label: `Create “${igName}” (new)` } : null, { value: NONE, label: 'Leave uncategorized (Review)' }].filter(Boolean), onChange: (v) => {
     if (!v) return;
     for (const r of rows) if (selection.get(r.post.url).selected) { Object.assign(selection.get(r.post.url), { collectionId: v, touched: true }); }
     bulkSel.value = '';
@@ -184,11 +184,11 @@ async function reviewScreen(ctx, page, scan) {
     const options = [...regular.map((c) => ({ value: c.id, label: c.name }))];
     if (r.cls.isNew && r.cls.taxonomyKey) options.push({ value: `new:${r.cls.taxonomyKey}`, label: `${r.cls.collectionName} (new)` });
     if (canCreate) options.push({ value: createValue, label: `Create “${igName}” (new)` });
-    if (inbox) options.push({ value: inbox.id, label: inbox.name });
+    options.push({ value: NONE, label: 'Leave uncategorized (Review)' });
     const colSel = UI.selectInput({ value: sel.collectionId, options, onChange: (v) => { sel.collectionId = v; sel.touched = true; }, label: `Collection for ${r.product.title}` });
     colSel.dataset.post = r.post.url;
-    if (colSel.value !== sel.collectionId) { colSel.value = inbox ? inbox.id : options[0].value; sel.collectionId = colSel.value; }
-    const conf = r.cls.isInbox ? 'Not sure — goes to Inbox' : `${Math.round(r.cls.confidence * 100)}% · ${r.cls.reason}`;
+    if (colSel.value !== sel.collectionId) { colSel.value = NONE; sel.collectionId = NONE; }
+    const conf = r.cls.isInbox ? 'Not sure — leave uncategorized' : `${Math.round(r.cls.confidence * 100)}% · ${r.cls.reason}`;
     card.append(
       cb,
       UI.pictureNode({ src: r.post.thumbnail || r.post.originalThumbnail, title: r.product.title }),
@@ -237,7 +237,7 @@ async function reviewScreen(ctx, page, scan) {
       for (const r of chosen) {
         const sel = selection.get(r.post.url);
         const resolve = async (value) => {
-          if (typeof value !== 'string') return null;
+          if (typeof value !== 'string' || value === NONE) return null;
           if (value.startsWith('new:')) {
             if (!collectionCache.has(value)) collectionCache.set(value, (await ctx.store.ensureCollectionForTaxonomy(value.slice(4)))?.id || null);
             return collectionCache.get(value);
@@ -253,11 +253,10 @@ async function reviewScreen(ctx, page, scan) {
           skipped++;
           continue;
         }
-        let targetId = await resolve(sel.collectionId);
-        if (!targetId) targetId = inbox ? inbox.id : null;
+        const targetId = await resolve(sel.collectionId);
         const userChose = sel.collectionId !== sel.defaultChoice;
         const namedDefault = !userChose && sel.collectionId === createValue;
-        const isInboxTarget = inbox && targetId === inbox.id;
+        const isUncategorized = !targetId;
         const item = await ctx.store.addItem({
           ...r.product,
           type: 'instagram',
@@ -271,11 +270,11 @@ async function reviewScreen(ctx, page, scan) {
           confidence: userChose ? 1 : namedDefault ? 0.9 : r.cls.confidence,
           categorizationSource: userChose ? 'manual' : 'local',
           categorizationReason: userChose ? 'Chosen by you during import' : namedDefault ? `Instagram collection “${igName}”` : r.cls.reason,
-          needsReview: !userChose && !!isInboxTarget,
+          needsReview: !userChose && isUncategorized,
         });
         created.push(item);
         entries.push([r.post.url, item.id]);
-        if (userChose && !isInboxTarget) {
+        if (userChose && !isUncategorized) {
           // A correction during review is a lesson worth keeping.
           prefs = learnFromCorrection(item, r.cls.isInbox ? null : r.cls.collectionId, targetId, prefs);
           learned = true;
@@ -292,7 +291,7 @@ async function reviewScreen(ctx, page, scan) {
       ctx.state.scan = null;
       selection.clear();
       UI.toast(`Imported ${pluralize(created.length, 'post', 'posts')}${skipped ? ` (${skipped} already saved)` : ''}.`, { duration: 6000 });
-      ctx.navigate(created.length && inbox && created.every((i) => i.collectionId === inbox.id) ? '#inbox' : '#all');
+      ctx.navigate(created.length && created.every((i) => !i.collectionId) ? '#review' : '#all');
     } catch (e) {
       UI.toast(String((e && e.message) || e), { kind: 'danger', duration: 8000 });
       importBtn.disabled = false;

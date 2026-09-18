@@ -121,7 +121,7 @@ async function loadProduct() {
     send({ type: MSG.CLASSIFY, product: state.product }),
     store.findByUrl(state.product.canonicalUrl || state.product.url).catch(() => null),
   ]);
-  state.classification = cls.ok ? cls.classification : { collectionId: null, collectionName: 'Inbox', confidence: 0, reason: '', isInbox: true, isNew: false };
+  state.classification = cls.ok ? cls.classification : { collectionId: null, collectionName: 'Review', confidence: 0, reason: '', isInbox: true, isNew: false };
   state.duplicate = dup;
   renderProduct();
   show('state-product');
@@ -234,17 +234,15 @@ function renderCollectionPicker() {
   const sel = $('collectionSelect');
   clear(sel);
   const cls = state.classification;
-  const regular = state.collections.filter((c) => c.taxonomyKey !== 'inbox');
-  const inbox = state.collections.find((c) => c.taxonomyKey === 'inbox');
-  for (const c of regular) sel.append(el('option', { value: c.id, text: c.name }));
-  if (cls.isNew && cls.taxonomyKey && cls.taxonomyKey !== 'inbox') {
+  if (cls.isInbox) sel.append(el('option', { value: '', text: 'Not sure — leave for Review' }));
+  for (const c of state.collections) sel.append(el('option', { value: c.id, text: c.name }));
+  if (cls.isNew && cls.taxonomyKey) {
     sel.append(el('option', { value: `new:${cls.taxonomyKey}`, text: `${cls.collectionName} (new collection)` }));
   }
-  if (inbox) sel.append(el('option', { value: inbox.id, text: inbox.name }));
   sel.append(el('option', { value: '__new', text: '＋ New collection…' }));
-  const initial = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || (inbox ? inbox.id : '');
+  const initial = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || '';
   sel.value = initial;
-  if (sel.value !== initial && inbox) sel.value = inbox.id;
+  if (sel.value !== initial) sel.value = sel.options[0]?.value || '';
   sel.onchange = () => {
     if (sel.value === '__new') {
       $('newCollectionRow').classList.remove('hidden');
@@ -276,7 +274,7 @@ function updateConfidencePill() {
     pill.textContent = 'Needs sorting';
     pill.classList.add('pill-warn');
     pill.title = cls.reason || '';
-    reason.textContent = cls.suggested ? `Not sure — maybe ${cls.suggested.collectionName}? You can pick a collection above or sort it later.` : 'Not enough signals to place this automatically. Pick a collection above or sort it later from the Inbox.';
+    reason.textContent = cls.suggested ? `Not sure — maybe ${cls.suggested.collectionName}? You can pick a collection above or sort it later.` : 'Not enough signals to place this automatically. Pick a collection above or sort it later from Review.';
   } else {
     const level = cls.confidence >= 0.75 ? 'High' : cls.confidence >= state.threshold ? 'Good' : 'Low';
     pill.textContent = `${level} · ${pct}%`;
@@ -372,7 +370,7 @@ async function save({ force }) {
     }
     state.savedItem = res.item;
     state.savedMode = 'saved';
-    showSaved(res.item, res.collection, res.classification);
+    showSaved(res.item, res.collection);
   } catch (e) {
     err.textContent = String((e && e.message) || e);
     err.classList.remove('hidden');
@@ -397,7 +395,7 @@ async function updateExisting() {
     state.savedItem = res.item;
     state.savedMode = 'updated';
     const col = state.collections.find((c) => c.id === res.item.collectionId);
-    showSaved(res.item, col, null);
+    showSaved(res.item, col);
   } catch (e) {
     err.textContent = String((e && e.message) || e);
     err.classList.remove('hidden');
@@ -406,15 +404,15 @@ async function updateExisting() {
   }
 }
 
-function showSaved(item, collection, classification) {
-  const isInbox = collection ? collection.taxonomyKey === 'inbox' : !!(classification && classification.isInbox);
+function showSaved(item, collection) {
+  const isInbox = !collection;
   const name = collection ? collection.name : 'Keepsake';
-  $('savedTitle').textContent = state.savedMode === 'updated' ? 'Updated' : isInbox ? 'Saved to Inbox' : `Saved to ${name}`;
+  $('savedTitle').textContent = state.savedMode === 'updated' ? 'Updated' : isInbox ? 'Not sure — saved for review' : `Saved to ${name}`;
   $('savedSubtitle').textContent = cut(item.title, 80);
   const thumb = $('savedThumb');
   clear(thumb);
   if (item.image) thumb.append(el('img', { src: item.image, alt: '', onError: () => clear(thumb) }));
-  $('savedInboxHint').textContent = isInbox ? 'Keepsake wasn’t sure where this belongs. You’ll find it in the Inbox, ready to sort.' : '';
+  $('savedInboxHint').textContent = isInbox ? 'Keepsake wasn’t sure where this belongs. You’ll find it in Review, ready to sort.' : '';
   $('savedUndo').classList.toggle('hidden', state.savedMode === 'updated');
   const learnRow = $('learnRow');
   const learnCheck = $('learnCheck');

@@ -41,7 +41,7 @@
     @media (prefers-reduced-motion: reduce) { .btn { transition: opacity .01s; transform: none !important; } }
   `;
 
-  let config = null; // { enabled, settings: floating settings, collections: [{id,name,isInbox}], threshold }
+  let config = null; // { enabled, settings: floating settings, collections: [{id,name}], threshold }
   let host = null;
   let button = null;
   let label = null;
@@ -338,7 +338,7 @@
     const options = collectionOptions();
     if (cls.isInbox && !manual) {
       toast.show({
-        title: 'Saved to Inbox',
+        title: 'Not sure — saved for review',
         message: cls.suggested ? `Not sure where this belongs — maybe ${cls.suggested.collectionName}? Pick a collection or sort it later.` : 'Not sure where this belongs. Pick a collection now or sort it later.',
         picker: { options, selectedId: cls.suggested?.collectionId || options[0]?.id, label: 'Move to collection' },
         duration: 12000,

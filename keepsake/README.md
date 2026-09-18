@@ -5,7 +5,7 @@
 Save products from any site with one click, let your collections sort themselves, keep everything on your own machine.
 
 - Works on any shop, without per-site integrations: reads JSON-LD / Open Graph / visible page data.
-- Files each save into a collection automatically (Camping & Outdoors, Home Decor, Kitchen, Van Build, …) and learns from your corrections. Unsure saves wait in an **Inbox** instead of being guessed.
+- Files each save into a collection automatically (Home Decor, Clothing, Technology, Kitchen, Camping & Outdoors, Weddings, Pets, …) and learns from your corrections. Unsure saves are left uncategorized and wait in **Review** instead of being guessed.
 - Optional on-page save buttons for product grids — off until you turn them on, and only on sites you grant.
 - Import your own **Instagram Saved collections**, then **read each post's page** for the real caption, creator, links and creator-tagged products (name, price, shop URL) — no login, no credentials, just your existing session.
 - Calm masonry dashboard with search, sort, filters, favorites, purchased/archive, bulk actions, drag-to-reorder collections, light/dark.
@@ -61,12 +61,12 @@ Click the puzzle-piece icon in Chrome's toolbar and press the pin next to **Keep
 Open any product page and click the Keepsake icon (or press Alt+Shift+K). The popup:
 
 1. Shows a skeleton while it reads the page, then the detected **image, title, price, retailer and URL**. Up to six image candidates are offered; click one to use it as the cover.
-2. Picks a **collection** and shows a confidence pill (High / Good / Low / Needs sorting) and a one-line reason ("*tent* in title", "you usually file items from this shop here"). Change the collection from the dropdown, pick "＋ New collection…" to create one inline, or leave it in the Inbox.
+2. Picks a **collection** and shows a confidence pill (High / Good / Low / Needs sorting) and a one-line reason ("*tent* in title", "you usually file items from this shop here"). Change the collection from the dropdown, pick "＋ New collection…" to create one inline, or leave it uncategorized for Review.
 3. Lets you edit the title and price and add a note.
 4. Detects if the page is already saved (tracking parameters ignored) and offers **Update existing item** or **Save another copy**.
 5. Confirms with **Undo**, **Open in dashboard** and — when you overrode the suggestion — a checkbox "Use this choice for similar items" that teaches the categorizer strongly.
 
-On pages Keepsake cannot read (browser pages, the Web Store, local files) it says so and offers the dashboard instead. On pages with no product data it still lets you save the page; the item is flagged and goes to the Inbox for sorting.
+On pages Keepsake cannot read (browser pages, the Web Store, local files) it says so and offers the dashboard instead. On pages with no product data it still lets you save the page; the item is left uncategorized and flagged for Review.
 
 ## On-page save buttons (optional)
 
@@ -81,7 +81,7 @@ Dashboard → **Settings → On-page save buttons**. Three modes:
 When enabled, a small **Save** button appears next to product cards on listing pages and next to the main image on product pages. It lives in a closed Shadow DOM, is positioned over the page (never inserted into its layout), avoids logos, avatars, banners, navigation and ads, works with keyboard focus (Tab to a card, Alt+Shift+S) and respects `prefers-reduced-motion`.
 
 - Saving from a card reads **only that card's** title, price, link and image, then shows a toast with **Undo** and **Edit**.
-- Options: button size (small/medium/large), position within the card, **Ask before saving** (shows a collection picker), **Auto-file confident saves**, **Send uncertain saves to Inbox**.
+- Options: button size (small/medium/large), position within the card, **Ask before saving** (shows a collection picker), **Auto-file confident saves**, **Leave uncertain saves for Review**.
 - Hide the button on specific sites (e.g. news sites) without revoking access, or **Revoke all site access** in one click. Switching away from "all sites" gives the broad permission back to Chrome automatically.
 
 ## Right-click save
@@ -97,23 +97,23 @@ Categorization runs **entirely locally** (`src/shared/categorizer.js`, determini
 - **your rules** (Settings → Categorization → *Rules*: "for mum, birthday → Gifts");
 - **what it learned** from your corrections: every time you move an item, the salient words of its title get a small weight toward the new collection; "Use this choice for similar items" gives a strong weight. Retailers you file consistently also count.
 
-Longer phrases beat shorter ones ("camp chair" beats "chair"), and a confidence score compares the winner with the runner-up. Below the **threshold** (default 0.6, adjustable) the item goes to the **Inbox** with a suggestion instead of a guess. The **Review** queue shows those, with one-click "Move to …" buttons that teach the categorizer.
+Longer phrases beat shorter ones ("camp chair" beats "chair"), and a confidence score compares the winner with the runner-up. Below the **threshold** (default 0.6, adjustable) the item is left uncategorized with a suggestion instead of a guess. The **Review** queue shows those, with one-click "Move to …" buttons that teach the categorizer.
 
 Other knobs (Settings → Categorization): auto-create missing default collections (e.g. re-create *Tools* when a drill shows up), and a view of the strongest learned terms and retailer habits with a one-click clear. Similar collection names are never duplicated ("Lamps" and "lamp" are the same collection; "Home Décor" matches "Home Decor"); merging collections carries names over as aliases.
 
-Default collections: Camping & Outdoors, Home Decor, Clothing, Technology, Kitchen, Van Build, Personal Care, Books & Media, Gifts, Travel, Tools, and the Inbox. Rename, recolor, merge or delete any of them.
+Keepsake starts with three collections — Home Decor, Clothing and Technology — and creates the rest of its default taxonomy (Camping & Outdoors, Kitchen, Van Build, Personal Care, Books & Media, Gifts, Travel, Tools, Weddings, Baby & Kids, Pets, Fitness & Wellness, Garden & Outdoor Living, Art & Crafts, Office & Stationery, Automotive, Jewelry & Watches, Music & Instruments, Party & Events) on demand, the first time something actually matches one. There is no separate Inbox collection: anything Keepsake can't confidently place is simply left uncategorized and shows up in **Review**. Rename, recolor, merge or delete any collection.
 
 ## The dashboard
 
 Open it from the popup, from the extension's Options, or at `#…` routes:
 
-`#all` · `#favorites` · `#inbox` · `#review` · `#archive` · `#c/<collection-id>` · `#item/<item-id>` (opens the item) · `#import` · `#settings` · `#ai` · `#privacy` · `#welcome`
+`#all` · `#favorites` · `#review` · `#archive` · `#c/<collection-id>` · `#item/<item-id>` (opens the item) · `#import` · `#settings` · `#ai` · `#privacy` · `#welcome`
 
-- **Masonry grid** of cards with image (or a text placeholder when there is none), title, price, retailer or Instagram creator, note, favorite star, source badge and "Needs sorting" label.
+- **Masonry grid** of cards with image (or a text placeholder when there is none), title, price, retailer or Instagram creator, note, favorite star, source badge and "Needs sorting" label. Clicking a card opens a lightweight **Quick view** (image, title, price, a link to the original page); "Edit details" from there or from a card's **⋯** menu opens the full editor.
 - **Search** across titles, retailers, notes, descriptions, prices, captions and creators; **sort** newest/oldest/price; **filter** by retailer; empty states for every view.
 - **Item details**: the **exact link** the item was saved from, shown in full as a selectable field with **Copy** and **Visit page** (**Open post** for Instagram) — and editable, so you can point an item at the right product page if the extractor grabbed a listing or a redirect. Changing the link updates the host, refreshes an auto-derived retailer name, re-keys duplicate detection, and refuses a link another item already has. Alongside it: edit title/price/note, choose a cover from the candidates, move collection (optionally "use for similar"), favorite / purchased / archived, delete with confirmation.
 - **Select** mode for bulk move, favorite, archive/unarchive, delete and (when AI is on) *Find products*.
-- **Collections**: drag to reorder (or Alt+↑/↓), covers from the newest image or your own URL, colors, keywords, rename, merge into…, delete (items move to the Inbox unless you choose otherwise).
+- **Collections**: drag to reorder (or Alt+↑/↓), covers from the newest image or your own URL, colors, keywords, rename, merge into…, delete (items become uncategorized, waiting in Review, unless you choose otherwise).
 - **Theme**: system / light / dark (toolbar sun icon or Settings → Appearance).
 - **Load sample data** from the welcome page or the empty state to see the layout; delete it any time.
 
@@ -197,7 +197,7 @@ What the suite covers (`tests/`):
 - `check-manifest.js` — valid MV3 manifest, every referenced file exists, all JS parses, no `innerHTML`/`eval`/inline scripts/styles, no remote resources in extension pages, no leftover markers or dead links.
 - `storage.test.js` — CRUD, duplicate detection with tracking parameters, collection dedupe/merge/delete, reorder, export excludes secrets, import merge/replace/validation of hostile input, sample data, migrations, Instagram import history.
 - `extract.test.js` — JSON-LD, Open Graph, sparse and hint-driven extraction against HTML fixtures; product-card detection on a listing page (logos/ads/banners ignored) and main-image detection on a product page.
-- `categorizer.test.js` — camping, lamps, shoes, electronics, kitchen, personal care, van, books, tools, travel; ambiguous → Inbox; threshold; rules; keywords; corrections learn (light/strong, capped) and forget; name similarity.
+- `categorizer.test.js` — camping, lamps, shoes, electronics, kitchen, personal care, van, books, tools, travel; ambiguous → uncategorized; threshold; rules; keywords; corrections learn (light/strong, capped) and forget; name similarity.
 - `instagram.test.js` — Saved-URL parsing, post/reel URL parsing, alt-text parsing, fixture scan with dedup, categorization from collection names.
 - `post-details.test.js` — post-page parsing from meta tags and embedded JSON (caption, creator, likes, date, full image, location, tagged products), login-wall detection, caption link/hashtag extraction with `javascript:` and Instagram links rejected, title generation, merge semantics, tab fallback, and the enrichment loop (progress, stop, retry-only-failures).
 - `ai.test.js` — provider boundary with a fake `fetch`: exact payload, key handling, link stripping, error handling.

@@ -11,6 +11,7 @@ import { isRestrictedUrl } from '../shared/url.js';
 import * as UI from './ui.js';
 
 const ALL_SITES = '*://*/*';
+const NONE = '__none'; // leave uncategorized, for Review
 
 // selection persists across re-renders within the same dashboard session:
 // tabId -> { selected, collectionId, defaultChoice, touched }
@@ -131,14 +132,13 @@ async function startScan(ctx, page) {
 }
 
 async function buildRows(ctx, found) {
-  const inbox = ctx.inbox();
   const context = { collections: ctx.state.collections, prefs: ctx.state.prefs, settings: ctx.state.settings };
   const rows = [];
   for (const { tab, product } of found) {
     const cls = classify(product, context);
     const dupe = await ctx.store.findByUrl(product.canonicalUrl || product.url);
     const key = String(tab.id);
-    const def = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || (inbox ? inbox.id : '');
+    const def = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || NONE;
     const existing = selection.get(key);
     if (!existing) selection.set(key, { selected: !dupe && !product.sparse, collectionId: def, defaultChoice: def, touched: false });
     else if (!existing.touched) Object.assign(existing, { collectionId: def, defaultChoice: def });
@@ -148,7 +148,6 @@ async function buildRows(ctx, found) {
 }
 
 function reviewScreen(ctx, page) {
-  const inbox = ctx.inbox();
   const regular = ctx.regularCollections();
   const rows = scan.rows;
 
@@ -160,7 +159,7 @@ function reviewScreen(ctx, page) {
 
   const bulkSel = UI.selectInput({
     value: '',
-    options: [{ value: '', label: 'Set collection for all selected…' }, ...regular.map((c) => ({ value: c.id, label: c.name })), inbox ? { value: inbox.id, label: inbox.name } : null].filter(Boolean),
+    options: [{ value: '', label: 'Set collection for all selected…' }, ...regular.map((c) => ({ value: c.id, label: c.name })), { value: NONE, label: 'Leave uncategorized (Review)' }],
     onChange: (v) => {
       if (!v) return;
       for (const r of rows) if (selection.get(r.key).selected) Object.assign(selection.get(r.key), { collectionId: v, touched: true });
@@ -202,12 +201,12 @@ function reviewScreen(ctx, page) {
     });
     const options = [...regular.map((c) => ({ value: c.id, label: c.name }))];
     if (r.cls.isNew && r.cls.taxonomyKey) options.push({ value: `new:${r.cls.taxonomyKey}`, label: `${r.cls.collectionName} (new)` });
-    if (inbox) options.push({ value: inbox.id, label: inbox.name });
+    options.push({ value: NONE, label: 'Leave uncategorized (Review)' });
     const colSel = UI.selectInput({ value: sel.collectionId, options, onChange: (v) => { sel.collectionId = v; sel.touched = true; }, label: `Collection for ${r.product.title}` });
     colSel.dataset.key = r.key;
-    if (colSel.value !== sel.collectionId) { colSel.value = inbox ? inbox.id : options[0]?.value || ''; sel.collectionId = colSel.value; }
+    if (colSel.value !== sel.collectionId) { colSel.value = NONE; sel.collectionId = NONE; }
     const price = priceLabel(r.product);
-    const conf = r.cls.isInbox ? 'Not sure — goes to Inbox' : `${Math.round(r.cls.confidence * 100)}% · ${r.cls.reason}`;
+    const conf = r.cls.isInbox ? 'Not sure — leave uncategorized' : `${Math.round(r.cls.confidence * 100)}% · ${r.cls.reason}`;
     card.append(
       cb,
       UI.pictureNode({ src: r.product.image, title: r.product.title }),
@@ -261,12 +260,15 @@ async function doImport(ctx, page) {
   for (const r of chosen) {
     const sel = selection.get(r.key);
     const userChose = sel.collectionId !== sel.defaultChoice;
+    const toNone = sel.collectionId === NONE;
     try {
       const res = await ctx.send({
         type: MSG.SAVE_ITEM,
         product: r.product,
-        collectionId: userChose ? sel.collectionId : null,
-        classification: userChose ? null : r.cls,
+        collectionId: userChose && !toNone ? sel.collectionId : null,
+        classification: toNone
+          ? { collectionId: null, collectionName: 'Review', taxonomyKey: null, confidence: 0, reason: 'You chose to leave this uncategorized', isNew: false, isInbox: true }
+          : userChose ? null : r.cls,
         source: 'tabs-import',
         learn: 'light',
       });
