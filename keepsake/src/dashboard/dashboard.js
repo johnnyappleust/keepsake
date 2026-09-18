@@ -767,22 +767,19 @@ async function openQuickView(id) {
     return;
   }
   const price = formatPrice(item.price, item.currency);
-  const openLink = item.url
-    ? el('a', { class: 'btn btn-primary', href: item.url, target: '_blank', rel: 'noopener noreferrer' }, [UI.externalIcon(), item.type === 'instagram' ? 'Open post' : 'Visit page'])
-    : null;
   const body = el('div', { class: 'quickview' }, [
     UI.pictureNode({ src: item.image, aspect: item.imageAspect, title: item.title, className: 'quickview-pic' }),
     el('div', { class: 'quickview-title' }, [item.title]),
     price ? el('div', { class: 'quickview-price' }, [price]) : null,
-    openLink,
   ]);
   await UI.openModal({
     title: 'Quick view',
     body,
     actions: [
-      { label: 'Edit details', quiet: true, closes: false, onClick: async (close) => { close(false); await openItem(item.id); } },
       { label: 'Close', value: false },
-    ],
+      { label: 'Edit details', quiet: true, closes: false, onClick: async (close) => { close(false); await openItem(item.id); } },
+      item.url ? { label: item.type === 'instagram' ? 'Open post' : 'Visit page', href: item.url, primary: true, icon: UI.externalIcon() } : null,
+    ].filter(Boolean),
   });
 }
 

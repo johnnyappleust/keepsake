@@ -10,7 +10,8 @@ let openModals = 0;
 let lastFocus = null;
 
 // Opens a modal. `body` is a node or array of nodes; `actions` is a list of
-// { label, primary, danger, quiet, onClick(close), autofocus } definitions.
+// { label, primary, danger, quiet, onClick(close), autofocus } definitions,
+// or { label, href, icon, target, rel } to render a real link (e.g. "Visit page").
 // Resolves when the modal closes with whatever value close() was given.
 export function openModal({ title, body, actions = [], wide = false, onClose = null, closeOnScrim = true, describedBy = '' }) {
   return new Promise((resolve) => {
@@ -51,25 +52,32 @@ export function openModal({ title, body, actions = [], wide = false, onClose = n
         }
       }
     };
-    const actionNodes = actions.map((a) => el('button', {
-      type: 'button',
-      class: `btn ${a.primary ? 'btn-primary' : ''} ${a.danger ? 'btn-danger' : ''} ${a.quiet ? 'btn-quiet' : ''}`.trim(),
-      disabled: !!a.disabled,
-      onClick: async (ev) => {
-        if (a.onClick) {
-          const btn = ev.currentTarget;
-          btn.disabled = true;
-          try {
-            const r = await a.onClick(close, btn);
-            if (r !== false && !closed && a.closes !== false) close(a.value);
-          } catch (err) {
-            showModalError(dialog, err);
-          } finally {
-            if (!closed) btn.disabled = false;
-          }
-        } else close(a.value);
-      },
-    }, [a.label]));
+    const actionNodes = actions.map((a) => (a.href
+      ? el('a', {
+        class: `btn ${a.primary ? 'btn-primary' : ''} ${a.quiet ? 'btn-quiet' : ''}`.trim(),
+        href: a.href,
+        target: a.target || '_blank',
+        rel: a.rel || 'noopener noreferrer',
+      }, a.icon ? [a.icon, a.label] : [a.label])
+      : el('button', {
+        type: 'button',
+        class: `btn ${a.primary ? 'btn-primary' : ''} ${a.danger ? 'btn-danger' : ''} ${a.quiet ? 'btn-quiet' : ''}`.trim(),
+        disabled: !!a.disabled,
+        onClick: async (ev) => {
+          if (a.onClick) {
+            const btn = ev.currentTarget;
+            btn.disabled = true;
+            try {
+              const r = await a.onClick(close, btn);
+              if (r !== false && !closed && a.closes !== false) close(a.value);
+            } catch (err) {
+              showModalError(dialog, err);
+            } finally {
+              if (!closed) btn.disabled = false;
+            }
+          } else close(a.value);
+        },
+      }, [a.label])));
     const dialog = el('div', { class: `modal ${wide ? 'modal-wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${id}-title`, 'aria-describedby': describedBy || null }, [
       el('div', { class: 'modal-head' }, [
         el('h2', { id: `${id}-title`, class: 'modal-title' }, [title]),
