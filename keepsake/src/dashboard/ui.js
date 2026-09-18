@@ -257,6 +257,12 @@ export function trashIcon() {
 export function folderIcon() {
   return svg(['M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v9A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18V7Z']);
 }
+export function expandIcon() {
+  return svg(['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7']);
+}
+export function collapseIcon() {
+  return svg(['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7']);
+}
 
 // Helpers --------------------------------------------------------------------------
 export function download(filename, text, type = 'application/json') {

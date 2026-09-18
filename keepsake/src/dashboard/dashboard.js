@@ -767,8 +767,30 @@ async function openQuickView(id) {
     return;
   }
   const price = formatPrice(item.price, item.currency);
+  const pic = UI.pictureNode({ src: item.image, aspect: item.imageAspect, title: item.title, className: 'quickview-pic' });
+  if (item.image) {
+    const hint = el('div', { class: 'quickview-pic-hint' }, [UI.expandIcon()]);
+    pic.append(hint);
+    pic.setAttribute('role', 'button');
+    pic.setAttribute('tabindex', '0');
+    pic.setAttribute('aria-pressed', 'false');
+    pic.setAttribute('aria-label', 'Expand image');
+    const toggleExpand = () => {
+      const expanded = pic.classList.toggle('is-expanded');
+      pic.setAttribute('aria-pressed', String(expanded));
+      pic.setAttribute('aria-label', expanded ? 'Shrink image' : 'Expand image');
+      hint.replaceChildren(expanded ? UI.collapseIcon() : UI.expandIcon());
+    };
+    pic.addEventListener('click', toggleExpand);
+    pic.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleExpand();
+      }
+    });
+  }
   const body = el('div', { class: 'quickview' }, [
-    UI.pictureNode({ src: item.image, aspect: item.imageAspect, title: item.title, className: 'quickview-pic' }),
+    pic,
     el('div', { class: 'quickview-title' }, [item.title]),
     price ? el('div', { class: 'quickview-price' }, [price]) : null,
   ]);

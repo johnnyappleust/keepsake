@@ -1564,6 +1564,15 @@ body.modal-open {
   border-radius: 16px;
   min-height: 160px;
   max-height: 38vh;
+  transition: max-height var(--t-med) var(--ease);
+}
+
+.quickview-pic[role="button"] {
+  cursor: pointer;
+}
+
+.quickview-pic.is-expanded {
+  max-height: 70vh;
 }
 
 .quickview-pic img {
@@ -1571,6 +1580,51 @@ body.modal-open {
   height: 100%;
   object-fit: cover;
   background: var(--paper-3);
+}
+
+.quickview-pic.is-expanded img {
+  object-fit: contain;
+}
+
+.quickview-pic::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  transition: background var(--t-fast) var(--ease);
+  pointer-events: none;
+}
+
+.quickview-pic[role="button"]:hover::after,
+.quickview-pic[role="button"]:focus-visible::after {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.quickview-pic-hint {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
+  pointer-events: none;
+}
+
+.quickview-pic-hint svg {
+  width: 16px;
+  height: 16px;
+}
+
+.quickview-pic[role="button"]:hover .quickview-pic-hint,
+.quickview-pic[role="button"]:focus-visible .quickview-pic-hint {
+  opacity: 1;
 }
 
 .quickview-title {
