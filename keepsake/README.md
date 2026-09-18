@@ -204,13 +204,20 @@ What the suite covers (`tests/`):
 - `dashboard.test.js` — boots the real dashboard in jsdom against a fake `chrome`: every route, empty states, search/sort/filter, item modal, the link field (copy, open, edit, host/retailer follow-up, duplicate refusal), card menu, bulk actions, collections CRUD/reorder/merge, settings permissions flow, export/import, typed delete-all.
 - `e2e.test.js` — the real background worker + popup + page scripts wired through a fake browser: install, restricted/product/sparse/Instagram popups, save/undo/duplicate/update, learning, context-menu card save, floating-button registration and hover-save, Instagram scan → review → import, and an enriched import that ends with real titles, captions, links and tagged products.
 
-## Packaging for the Chrome Web Store
+## Releasing to the Chrome Web Store
 
-1. Bump `version` in `manifest.json`.
-2. `npm test` must pass.
-3. `npm run zip` writes `dist/keepsake.zip` containing only the extension files (no `node_modules`, tests or docs).
-4. In the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole), create an item, upload the zip, fill in the listing (icons are in `icons/`, `icon128.png` is the store icon), and in the **Privacy** tab declare: single purpose (save products to a local wishlist), `storage` / `activeTab` / `scripting` / `contextMenus` justifications from the table above, optional host permissions justified by the on-page buttons and BYOK AI, remote code: none, data usage: none collected.
-5. Keep `PRIVACY.md` as the privacy policy URL text.
+Releases are automated with GitHub Actions (`.github/workflows/release.yml`):
+
+1. Bump `version` in `keepsake/manifest.json`.
+2. Commit, then tag the commit `vX.Y.Z` (matching the manifest version exactly) and push the tag:
+   ```bash
+   git tag v1.2.3
+   git push origin v1.2.3
+   ```
+3. The workflow checks out the tag, verifies the tag matches `manifest.json`'s `version`, zips the extension (`manifest.json`, `background.js`, `icons/`, `src/` — docs excluded), uploads it to the existing Chrome Web Store listing via the Chrome Web Store Publish API, and publishes it. It also attaches the zip to a GitHub release for that tag.
+4. Chrome reviews the update (usually within a few hours to a few days) before it rolls out to users; the workflow's "Publish item" step succeeds once the item is submitted for publishing, not once review finishes.
+
+This requires one-time setup of Google OAuth credentials stored as GitHub Secrets — see the repository's Actions secrets for `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN`. The target listing (`icons/`, `icon128.png` as the store icon, single purpose, permission justifications from the table above, remote code: none, data usage: none collected, `PRIVACY.md` as the privacy policy text) is configured once in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole) and does not need to change per release.
 
 ## Project layout
 

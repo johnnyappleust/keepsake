@@ -1,0 +1,122 @@
+name: Release to Chrome Web Store
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v1.2.3"
+        required: true
+
+env:
+  EXTENSION_ID: akekjlfpdbkghhopdkgnfnkcibonaiom
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+
+      - name: Verify manifest version matches tag
+        run: |
+          TAG_VERSION="${{ steps.tag.outputs.name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          MANIFEST_VERSION=$(node -p "require('./keepsake/manifest.json').version")
+          echo "Tag version:      $TAG_VERSION"
+          echo "Manifest version: $MANIFEST_VERSION"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION does not match manifest.json version $MANIFEST_VERSION. Bump the version in keepsake/manifest.json and re-tag."
+            exit 1
+          fi
+
+      - name: Package extension
+        run: |
+          cd keepsake
+          zip -r ../keepsake.zip . \
+            -x "README.md" \
+            -x "LICENSE" \
+            -x "PRIVACY.md" \
+            -x ".*" \
+            -x "**/.DS_Store"
+          cd ..
+          unzip -l keepsake.zip
+
+      - name: Get access token
+        id: auth
+        env:
+          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          RESPONSE=$(curl -sS -X POST https://oauth2.googleapis.com/token \
+            -d "client_id=${CLIENT_ID}" \
+            -d "client_secret=${CLIENT_SECRET}" \
+            -d "refresh_token=${REFRESH_TOKEN}" \
+            -d "grant_type=refresh_token")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
+          if [ "$ACCESS_TOKEN" == "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Failed to obtain access token from Google OAuth."
+            echo "$RESPONSE" | jq 'del(.access_token)'
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "token=$ACCESS_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Upload package to Chrome Web Store
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          RESPONSE=$(curl -sS -X PUT \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "x-goog-api-version: 2" \
+            -T keepsake.zip \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/${EXTENSION_ID}")
+          echo "$RESPONSE"
+          STATE=$(echo "$RESPONSE" | jq -r '.uploadState')
+          if [ "$STATE" != "SUCCESS" ]; then
+            echo "::error::Upload failed with state: $STATE"
+            exit 1
+          fi
+
+      - name: Publish item
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          RESPONSE=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Length: 0" \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/${EXTENSION_ID}/publish")
+          echo "$RESPONSE"
+          STATUS=$(echo "$RESPONSE" | jq -r '.status[0] // empty')
+          if [ "$STATUS" != "OK" ] && [ "$STATUS" != "ITEM_PENDING_REVIEW" ]; then
+            echo "::error::Publish failed."
+            exit 1
+          fi
+
+      - name: Attach package to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.name }}" keepsake.zip \
+            --title "${{ steps.tag.outputs.name }}" \
+            --generate-notes \
+            --repo "${{ github.repository }}" || \
+          gh release upload "${{ steps.tag.outputs.name }}" keepsake.zip \
+            --repo "${{ github.repository }}" --clobber
