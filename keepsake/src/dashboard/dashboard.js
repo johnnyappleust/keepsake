@@ -775,8 +775,33 @@ async function openQuickView(id) {
     pic.setAttribute('tabindex', '0');
     pic.setAttribute('aria-pressed', 'false');
     pic.setAttribute('aria-label', 'Expand image');
+    let onSettle = null;
     const toggleExpand = () => {
-      const expanded = pic.classList.toggle('is-expanded');
+      if (onSettle) {
+        pic.removeEventListener('transitionend', onSettle);
+        onSettle = null;
+      }
+      const expanded = !pic.classList.contains('is-expanded');
+      if (expanded) {
+        // Grow while still cropped (object-fit stays "cover"), and only switch
+        // to the uncropped "contain" view once the box has finished growing —
+        // flipping object-fit mid-transition pops the image to its letterboxed
+        // size before the box catches up, which reads as a flutter.
+        pic.classList.remove('is-settled');
+        pic.classList.add('is-expanded');
+        onSettle = (e) => {
+          if (e.target === pic && e.propertyName === 'max-height' && pic.classList.contains('is-expanded')) pic.classList.add('is-settled');
+          pic.removeEventListener('transitionend', onSettle);
+          onSettle = null;
+        };
+        pic.addEventListener('transitionend', onSettle);
+      } else {
+        // Drop back to "cover" before shrinking, while the box is still full
+        // size (so it's a no-op visually), so the crop animates in smoothly
+        // as the box shrinks instead of popping in afterward.
+        pic.classList.remove('is-settled');
+        pic.classList.remove('is-expanded');
+      }
       pic.setAttribute('aria-pressed', String(expanded));
       pic.setAttribute('aria-label', expanded ? 'Shrink image' : 'Expand image');
       hint.replaceChildren(expanded ? UI.collapseIcon() : UI.expandIcon());
