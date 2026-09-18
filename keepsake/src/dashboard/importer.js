@@ -108,11 +108,6 @@ async function reviewScreen(ctx, page, scan) {
 
   const igName = scan.collectionName || 'collection';
   const nameMatch = regular.find((c) => c.name.toLowerCase() === igName.toLowerCase()) || findSimilarCollection(igName, regular, 0.85);
-  // When the Instagram collection has a name we don't know yet, offer to create
-  // a Keepsake collection with that name (default for posts Keepsake otherwise
-  // can't place) — the name is the strongest signal we have.
-  const canCreate = !nameMatch && !!scan.collectionName && !/^all posts$/i.test(igName) && ctx.state.prefs?.autoCreateCollections !== false;
-  const createValue = `newname:${igName}`;
   const NONE = '__none'; // leave uncategorized, for Review
 
   // Classify each post once; the Instagram collection name is a strong signal.
@@ -121,8 +116,7 @@ async function reviewScreen(ctx, page, scan) {
     const cls = classify(product, context);
     const rememberedId = history[normalizeUrl(post.url)];
     const alreadyImported = (!!rememberedId && itemsById.has(rememberedId)) || ctx.state.items.some((i) => i.type === 'instagram' && i.sourceUrl === post.url);
-    let def = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || NONE;
-    if (cls.isInbox && canCreate) def = createValue;
+    const def = cls.isNew ? `new:${cls.taxonomyKey}` : cls.collectionId || NONE;
     const existing = selection.get(post.url);
     if (!existing) selection.set(post.url, { selected: !alreadyImported, collectionId: def, defaultChoice: def, touched: false });
     else if (!existing.touched) Object.assign(existing, { collectionId: def, defaultChoice: def });
@@ -135,7 +129,7 @@ async function reviewScreen(ctx, page, scan) {
   const updateSummary = () => { summary.textContent = `${counts()} of ${scan.posts.length} selected · ${rows.filter((r) => r.alreadyImported).length} already imported`; };
   updateSummary();
 
-  const bulkSel = UI.selectInput({ value: '', options: [{ value: '', label: 'Set collection for all selected…' }, ...regular.map((c) => ({ value: c.id, label: c.name })), canCreate ? { value: createValue, label: `Create “${igName}” (new)` } : null, { value: NONE, label: 'Leave uncategorized (Review)' }].filter(Boolean), onChange: (v) => {
+  const bulkSel = UI.selectInput({ value: '', options: [{ value: '', label: 'Set collection for all selected…' }, ...regular.map((c) => ({ value: c.id, label: c.name })), { value: NONE, label: 'Leave uncategorized (Review)' }], onChange: (v) => {
     if (!v) return;
     for (const r of rows) if (selection.get(r.post.url).selected) { Object.assign(selection.get(r.post.url), { collectionId: v, touched: true }); }
     bulkSel.value = '';
@@ -163,7 +157,7 @@ async function reviewScreen(ctx, page, scan) {
   page.append(head);
   page.append(detailsBanner(ctx, scan));
   page.append(el('p', { class: 'help' }, [
-    nameMatch ? `Your Instagram collection name matches your “${nameMatch.name}” collection, so posts default there. ` : canCreate ? `Posts Keepsake can’t place from their captions will go into a new “${igName}” collection (change this per post or for all). ` : `Keepsake uses the collection name “${igName}” plus each caption to suggest a collection. `,
+    nameMatch ? `Your Instagram collection name matches your “${nameMatch.name}” collection, so posts default there. ` : `Keepsake uses the collection name “${igName}” plus each caption to suggest a collection; anything it can’t place goes to Review. `,
     'Posts are saved as inspiration cards with a link back to the original. ',
     scan.reason === 'limit' ? `The scan stopped at the safety limit (${scan.posts.length}); scroll further on Instagram and scan again to get more.` : '',
   ]));
@@ -183,7 +177,6 @@ async function reviewScreen(ctx, page, scan) {
     });
     const options = [...regular.map((c) => ({ value: c.id, label: c.name }))];
     if (r.cls.isNew && r.cls.taxonomyKey) options.push({ value: `new:${r.cls.taxonomyKey}`, label: `${r.cls.collectionName} (new)` });
-    if (canCreate) options.push({ value: createValue, label: `Create “${igName}” (new)` });
     options.push({ value: NONE, label: 'Leave uncategorized (Review)' });
     const colSel = UI.selectInput({ value: sel.collectionId, options, onChange: (v) => { sel.collectionId = v; sel.touched = true; }, label: `Collection for ${r.product.title}` });
     colSel.dataset.post = r.post.url;
@@ -242,10 +235,6 @@ async function reviewScreen(ctx, page, scan) {
             if (!collectionCache.has(value)) collectionCache.set(value, (await ctx.store.ensureCollectionForTaxonomy(value.slice(4)))?.id || null);
             return collectionCache.get(value);
           }
-          if (value.startsWith('newname:')) {
-            if (!collectionCache.has(value)) collectionCache.set(value, (await ctx.store.createCollection({ name: sanitizeText(value.slice(8), 80) })).collection.id);
-            return collectionCache.get(value);
-          }
           return value;
         };
         const dupe = await ctx.store.findByUrl(r.post.url);
@@ -255,7 +244,6 @@ async function reviewScreen(ctx, page, scan) {
         }
         const targetId = await resolve(sel.collectionId);
         const userChose = sel.collectionId !== sel.defaultChoice;
-        const namedDefault = !userChose && sel.collectionId === createValue;
         const isUncategorized = !targetId;
         const item = await ctx.store.addItem({
           ...r.product,
@@ -267,9 +255,9 @@ async function reviewScreen(ctx, page, scan) {
           images: [r.post.thumbnail, r.post.originalImage, r.post.originalThumbnail].filter(Boolean),
           imageAspect: 1,
           collectionId: targetId,
-          confidence: userChose ? 1 : namedDefault ? 0.9 : r.cls.confidence,
+          confidence: userChose ? 1 : r.cls.confidence,
           categorizationSource: userChose ? 'manual' : 'local',
-          categorizationReason: userChose ? 'Chosen by you during import' : namedDefault ? `Instagram collection “${igName}”` : r.cls.reason,
+          categorizationReason: userChose ? 'Chosen by you during import' : r.cls.reason,
           needsReview: !userChose && isUncategorized,
         });
         created.push(item);
