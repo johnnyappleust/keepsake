@@ -10,6 +10,7 @@ import { INBOX_KEY } from '../shared/taxonomy.js';
 import * as UI from './ui.js';
 import { renderSettings, renderAI, renderPrivacy, analyzeItems } from './settings.js';
 import { renderImport } from './importer.js';
+import { renderTabsImport } from './tabsImport.js';
 
 const store = createStore(chromeBackend());
 const $ = (id) => document.getElementById(id);
@@ -331,6 +332,7 @@ function renderToolbar() {
   else if (r.name === 'archive') title = 'Archive';
   else if (r.name === 'review') title = 'Review queue';
   else if (r.name === 'import') title = 'Instagram import';
+  else if (r.name === 'tabsimport') title = 'Import from tabs';
   else if (r.name === 'settings') title = 'Settings';
   else if (r.name === 'privacy') title = 'Privacy';
   else if (r.name === 'ai') title = 'Optional AI';
@@ -373,6 +375,9 @@ function renderView() {
       break;
     case 'import':
       renderImport(ctx, view);
+      break;
+    case 'tabsimport':
+      renderTabsImport(ctx, view);
       break;
     case 'review':
       renderReview(view);

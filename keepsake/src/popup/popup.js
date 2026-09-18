@@ -63,6 +63,7 @@ async function applyTheme() {
 
 async function boot() {
   $('openDashboard').addEventListener('click', () => openDashboard('#all'));
+  $('importTabsBtn').addEventListener('click', () => openDashboard('#tabsimport'));
   $('openDashboardBrand').addEventListener('click', (e) => {
     e.preventDefault();
     openDashboard('#all');
