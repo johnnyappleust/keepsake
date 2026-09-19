@@ -788,48 +788,51 @@ async function openQuickView(id) {
   if (item.image) {
     const hint = el('div', { class: 'quickview-pic-hint' }, [UI.expandIcon()]);
     pic.append(hint);
-    pic.setAttribute('role', 'button');
-    pic.setAttribute('tabindex', '0');
     pic.setAttribute('aria-pressed', 'false');
     pic.setAttribute('aria-label', 'Expand image');
-    let onSettle = null;
     const toggleExpand = () => {
-      if (onSettle) {
-        pic.removeEventListener('transitionend', onSettle);
-        onSettle = null;
-      }
+      // Object-fit stays "cover" throughout: swapping to "contain" once the box
+      // finishes growing made the image jump and exposed a letterbox edge.
       const expanded = !pic.classList.contains('is-expanded');
-      if (expanded) {
-        // Grow while still cropped (object-fit stays "cover"), and only switch
-        // to the uncropped "contain" view once the box has finished growing —
-        // flipping object-fit mid-transition pops the image to its letterboxed
-        // size before the box catches up, which reads as a flutter.
-        pic.classList.remove('is-settled');
-        pic.classList.add('is-expanded');
-        onSettle = (e) => {
-          if (e.target === pic && e.propertyName === 'max-height' && pic.classList.contains('is-expanded')) pic.classList.add('is-settled');
-          pic.removeEventListener('transitionend', onSettle);
-          onSettle = null;
-        };
-        pic.addEventListener('transitionend', onSettle);
-      } else {
-        // Drop back to "cover" before shrinking, while the box is still full
-        // size (so it's a no-op visually), so the crop animates in smoothly
-        // as the box shrinks instead of popping in afterward.
-        pic.classList.remove('is-settled');
-        pic.classList.remove('is-expanded');
-      }
+      pic.classList.toggle('is-expanded', expanded);
       pic.setAttribute('aria-pressed', String(expanded));
       pic.setAttribute('aria-label', expanded ? 'Shrink image' : 'Expand image');
       hint.replaceChildren(expanded ? UI.collapseIcon() : UI.expandIcon());
     };
-    pic.addEventListener('click', toggleExpand);
+    // Only offer expansion when it reveals a meaningful amount more of the
+    // image. Short/wide images already fit in the collapsed box, so expanding
+    // would just add a sliver of height.
+    const MIN_EXPAND_GAIN_PX = 48;
+    const updateExpandable = () => {
+      const width = pic.clientWidth;
+      const img = pic.querySelector('img');
+      const aspect = img && img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : item.imageAspect;
+      if (!width || !aspect) return;
+      const natural = width / Math.max(0.5, Math.min(2.2, aspect));
+      const vh = window.innerHeight;
+      const collapsed = Math.max(160, Math.min(natural, vh * 0.38));
+      const expandedH = Math.max(160, Math.min(natural, vh * 0.7));
+      const expandable = expandedH - collapsed >= MIN_EXPAND_GAIN_PX;
+      if (expandable) {
+        pic.setAttribute('role', 'button');
+        pic.setAttribute('tabindex', '0');
+      } else if (!pic.classList.contains('is-expanded')) {
+        pic.removeAttribute('role');
+        pic.removeAttribute('tabindex');
+      }
+    };
+    pic.addEventListener('click', () => {
+      if (pic.getAttribute('role') === 'button') toggleExpand();
+    });
     pic.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if ((e.key === 'Enter' || e.key === ' ') && pic.getAttribute('role') === 'button') {
         e.preventDefault();
         toggleExpand();
       }
     });
+    pic.querySelector('img')?.addEventListener('load', updateExpandable);
+    // Fires once the modal attaches the pic (width becomes known) and on resize.
+    new ResizeObserver(updateExpandable).observe(pic);
   }
   const body = el('div', { class: 'quickview' }, [
     pic,

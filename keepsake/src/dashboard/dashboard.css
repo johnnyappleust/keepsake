@@ -1585,10 +1585,6 @@ body.modal-open {
   background: var(--paper-3);
 }
 
-.quickview-pic.is-expanded.is-settled img {
-  object-fit: contain;
-}
-
 .quickview-pic::after {
   content: '';
   position: absolute;
