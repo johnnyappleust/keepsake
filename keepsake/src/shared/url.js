@@ -71,6 +71,22 @@ export function cleanUrl(input) {
   }
 }
 
+// The link to actually open for a saved URL. A logged-in Instagram session
+// reroutes /reel/<code>/ into its reels feed viewer, which lands on other
+// reels; /p/<code>/ serves the same post without that redirect. The stored
+// URL is left alone (it's the duplicate-detection key); use this for display
+// and for anything the user clicks.
+export function openableUrl(input) {
+  try {
+    const u = new URL(String(input));
+    if (!/(^|\.)instagram\.com$/i.test(u.hostname)) return input;
+    const m = u.pathname.match(/^\/(?:[^/]+\/)?(?:reel|reels)\/([A-Za-z0-9_-]{5,})/);
+    return m ? `https://www.instagram.com/p/${m[1]}/` : input;
+  } catch {
+    return input;
+  }
+}
+
 export function isRestrictedUrl(url) {
   if (!url) return true;
   return !/^https?:\/\//i.test(url) || /^https?:\/\/chrome\.google\.com\/webstore/i.test(url) || /^https?:\/\/chromewebstore\.google\.com/i.test(url);

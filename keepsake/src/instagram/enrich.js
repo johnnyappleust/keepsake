@@ -8,6 +8,7 @@
 // from the button in the review screen, never at install.
 
 import { MSG } from '../shared/messages.js';
+import { openableUrl } from '../shared/url.js';
 import { parsePostHtml, parsePostBundle, titleFromCaption } from './post.js';
 
 export const INSTAGRAM_ORIGIN = 'https://www.instagram.com/*';
@@ -42,7 +43,7 @@ async function readViaFetch(url, fetchImpl) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetchImpl(url, { credentials: 'include', redirect: 'follow', signal: controller.signal, headers: { accept: 'text/html,application/xhtml+xml' } });
+    const res = await fetchImpl(openableUrl(url), { credentials: 'include', redirect: 'follow', signal: controller.signal, headers: { accept: 'text/html,application/xhtml+xml' } });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, status: res.status };
     const html = await res.text();
     const details = parsePostHtml(html, url);

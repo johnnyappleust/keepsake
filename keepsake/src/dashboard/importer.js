@@ -5,7 +5,7 @@
 import { MSG } from '../shared/messages.js';
 import { el, clear, sanitizeText, pluralize, formatPrice } from '../shared/util.js';
 import { classify, learnFromCorrection, findSimilarCollection } from '../shared/categorizer.js';
-import { normalizeUrl } from '../shared/url.js';
+import { normalizeUrl, openableUrl } from '../shared/url.js';
 import { titleFromCaption } from '../instagram/post.js';
 import { enrichPosts, hasInstagramAccess, requestInstagramAccess } from '../instagram/enrich.js';
 import * as UI from './ui.js';
@@ -193,7 +193,7 @@ async function reviewScreen(ctx, page, scan) {
         r.post.links && r.post.links.length ? el('div', { class: 'post-links' }, r.post.links.slice(0, 2).map((l) => el('a', { class: 'small', href: l.url, target: '_blank', rel: 'noopener noreferrer' }, [l.label || l.url]))) : null,
         colSel,
         el('div', { class: 'post-conf', title: r.cls.reason }, [conf]),
-        el('a', { class: 'small', href: r.post.url, target: '_blank', rel: 'noopener noreferrer' }, ['Open on Instagram']),
+        el('a', { class: 'small', href: openableUrl(r.post.url), target: '_blank', rel: 'noopener noreferrer' }, ['Open on Instagram']),
       ]),
     );
     cardMap.set(r.post.url, { card, cb });

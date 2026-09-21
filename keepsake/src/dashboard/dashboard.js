@@ -6,6 +6,7 @@ import { createStore, chromeBackend } from '../shared/storage.js';
 import { MSG } from '../shared/messages.js';
 import { el, clear, formatPrice, formatDate, sanitizeText, parsePrice, debounce, pluralize, hostnameOf, prettyRetailer } from '../shared/util.js';
 import { classify } from '../shared/categorizer.js';
+import { openableUrl } from '../shared/url.js';
 import * as UI from './ui.js';
 import { renderSettings, renderAI, renderPrivacy, analyzeItems } from './settings.js';
 import { renderImport } from './importer.js';
@@ -575,7 +576,7 @@ function itemMenu(item) {
     { label: item.purchased ? 'Mark as not purchased' : 'Mark as purchased', icon: UI.checkIcon(), onClick: () => store.updateItem(item.id, { purchased: !item.purchased }) },
     { label: item.archived ? 'Unarchive' : 'Archive', icon: UI.folderIcon(), onClick: () => store.updateItem(item.id, { archived: !item.archived }) },
   ];
-  if (item.url) entries.push({ label: item.type === 'instagram' ? 'Open on Instagram' : 'Visit page', icon: UI.externalIcon(), onClick: () => window.open(item.url, '_blank', 'noopener') });
+  if (item.url) entries.push({ label: item.type === 'instagram' ? 'Open on Instagram' : 'Visit page', icon: UI.externalIcon(), onClick: () => window.open(openableUrl(item.url), '_blank', 'noopener') });
   entries.push({ sep: true });
   entries.push({ label: 'Delete', icon: UI.trashIcon(), danger: true, onClick: () => deleteItems([item]) });
   return entries;
@@ -849,7 +850,7 @@ async function openQuickView(id) {
     actions: [
       { label: 'Close', value: false },
       { label: 'Edit details', quiet: true, closes: false, onClick: async (close) => { close(false); await openItem(item.id); } },
-      item.url ? { label: item.type === 'instagram' ? 'Open post' : 'Visit page', href: item.url, primary: true, icon: UI.externalIcon() } : null,
+      item.url ? { label: item.type === 'instagram' ? 'Open post' : 'Visit page', href: openableUrl(item.url), primary: true, icon: UI.externalIcon() } : null,
     ].filter(Boolean),
   });
 }
@@ -909,8 +910,9 @@ async function openItem(id) {
   // The exact page this item came from: always visible, selectable, copyable,
   // and editable in case the extractor grabbed a listing rather than the product.
   const urlInput = el('input', { class: 'input mono', type: 'url', spellcheck: 'false', 'aria-label': 'Item URL', placeholder: 'https://…' });
-  urlInput.value = item.url || '';
-  const openLink = el('a', { class: 'btn btn-sm', href: item.url || '#', target: '_blank', rel: 'noopener noreferrer', title: item.url || '' }, [UI.externalIcon(), item.type === 'instagram' ? 'Open post' : 'Visit page']);
+  const shownUrl = openableUrl(item.url || '');
+  urlInput.value = shownUrl;
+  const openLink = el('a', { class: 'btn btn-sm', href: shownUrl || '#', target: '_blank', rel: 'noopener noreferrer', title: shownUrl }, [UI.externalIcon(), item.type === 'instagram' ? 'Open post' : 'Visit page']);
   if (!item.url) openLink.classList.add('hidden');
   const copyBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-label': 'Copy link', onClick: async () => {
     const value = urlInput.value.trim();
@@ -1010,7 +1012,7 @@ async function openItem(id) {
           patch.currency = sanitizeText(currencyInput.value, 4).toUpperCase() || parsed.currency || '';
         }
         const nextUrl = urlInput.value.trim();
-        if (nextUrl !== (item.url || '')) {
+        if (nextUrl !== shownUrl) {
           if (nextUrl && !/^https?:\/\//i.test(nextUrl)) throw new Error('A link has to start with http:// or https://.');
           const clash = nextUrl ? await store.findByUrl(nextUrl) : null;
           if (clash && clash.id !== item.id) throw new Error(`Another item (“${cut(clash.title, 40)}”) already has that link.`);

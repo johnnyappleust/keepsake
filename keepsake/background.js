@@ -6,7 +6,7 @@
 import { createStore, chromeBackend } from './src/shared/storage.js';
 import { classify, learnFromCorrection } from './src/shared/categorizer.js';
 import { parsePrice, sanitizeText } from './src/shared/util.js';
-import { isRestrictedUrl } from './src/shared/url.js';
+import { isRestrictedUrl, openableUrl } from './src/shared/url.js';
 import { MSG, SESSION_KEYS } from './src/shared/messages.js';
 import { classifyWithAI } from './src/ai/provider.js';
 
@@ -358,7 +358,8 @@ function readPostInTab(url) {
 }
 
 async function readPostInTabNow(url) {
-  const tab = await chrome.tabs.create({ url, active: false });
+  // /p/ form: a logged-in /reel/ tab gets rerouted into the reels feed and would read the wrong post.
+  const tab = await chrome.tabs.create({ url: openableUrl(url), active: false });
   const tabId = tab.id;
   try {
     await waitForTabLoad(tabId, 20000);
