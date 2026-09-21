@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Keepsake",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Privacy-first universal wishlist: save products from any site into collections that sort themselves. Stays in your browser.",
   "minimum_chrome_version": "121",
   "icons": {

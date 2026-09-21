@@ -77,12 +77,12 @@ async function boot() {
     if (!keys.some((k) => k.startsWith('keepsake_'))) return;
     await reload();
     if (changes.keepsake_settings) applyTheme();
-    render();
+    render({ keepScroll: true });
   }, 150));
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'session' && changes.keepsake_igScan && state.route.name === 'import') {
       state.scan = changes.keepsake_igScan.newValue || null;
-      render();
+      render({ keepScroll: true });
     }
   });
 }
@@ -186,11 +186,13 @@ function toggleNav(force) {
 
 const GRID_ROUTES = new Set(['all', 'favorites', 'archive', 'c', 'item']);
 
-function render() {
+// keepScroll: re-render the current view in place (data changed underneath it)
+// instead of treating it as a navigation, so the page stays where the user was.
+function render({ keepScroll = false } = {}) {
   renderNav();
   renderSidebarCollections();
   renderToolbar();
-  renderView();
+  renderView({ keepScroll });
   updateBulkbar();
   toggleNav(false);
 }
@@ -315,7 +317,7 @@ async function moveCollectionBy(id, delta) {
   ids.splice(to, 0, id);
   await store.reorderCollections(ids);
   await reload();
-  render();
+  render({ keepScroll: true });
 }
 
 function renderToolbar() {
@@ -363,8 +365,9 @@ function renderToolbar() {
   }
 }
 
-function renderView() {
+function renderView({ keepScroll = false } = {}) {
   const view = $('view');
+  const prevScroll = view.scrollTop;
   clear(view);
   view.scrollTop = 0;
   const r = state.route;
@@ -408,6 +411,7 @@ function renderView() {
   }
   if (isGridRoute()) $('viewCount').textContent = pluralize(currentGridItems().length, 'item', 'items');
   else $('viewCount').textContent = '';
+  if (keepScroll) view.scrollTop = prevScroll;
 }
 
 function isGridRoute() {
@@ -1245,9 +1249,11 @@ function renderReview(view) {
   }
   const list = el('div', { class: 'review-list' });
   const regular = ctx.regularCollections();
+  const counts = new Map();
+  for (const i of state.items) if (i.collectionId) counts.set(i.collectionId, (counts.get(i.collectionId) || 0) + 1);
   for (const item of items) {
     const cls = classify(item, { collections: state.collections, prefs: state.prefs, settings: state.settings });
-    const suggestions = (cls.alternatives || []).filter((a) => !a.isNew && a.collectionId).slice(0, 3);
+    const suggestions = topSuggestions(cls, regular, counts);
     const select = UI.selectInput({
       value: '',
       options: [
@@ -1276,7 +1282,7 @@ function renderReview(view) {
         el('div', { class: 'review-title' }, [item.title]),
         el('div', { class: 'review-reason' }, [[item.retailer || item.host, item.categorizationReason || cls.reason].filter(Boolean).join(' · ')]),
         el('div', { class: 'review-actions' }, [
-          ...suggestions.map((s) => el('button', { type: 'button', class: 'btn btn-sm btn-primary', onClick: () => fileItem(item, s.collectionId) }, [`Move to ${s.collectionName}`])),
+          ...suggestions.map((s) => el('button', { type: 'button', class: 'btn btn-sm btn-primary', onClick: () => fileItem(item, s.isNew ? `new:${s.taxonomyKey}` : s.collectionId) }, [`Move to ${s.collectionName}`])),
           select,
           el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => openQuickView(item.id) }, ['Details']),
           el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => deleteItems([item]) }, ['Delete']),
@@ -1289,7 +1295,32 @@ function renderReview(view) {
   view.append(page);
 }
 
+// The three most likely collections for an item: best keyword matches first
+// (including default categories not created yet), then padded with the
+// collections the user files into most so there are always three to pick from.
+function topSuggestions(cls, collections, counts) {
+  const picks = [];
+  const seen = new Set();
+  const add = (s) => {
+    const key = s.isNew ? `new:${s.taxonomyKey}` : s.collectionId;
+    if (!key || seen.has(key) || picks.length >= 3) return;
+    seen.add(key);
+    picks.push(s);
+  };
+  for (const a of cls.alternatives || []) {
+    if (a.isNew ? a.taxonomyKey : a.collectionId) add(a);
+  }
+  const byUse = [...collections].sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
+  for (const c of byUse) add({ collectionId: c.id, collectionName: c.name, isNew: false });
+  return picks;
+}
+
 async function fileItem(item, collectionId) {
+  if (typeof collectionId === 'string' && collectionId.startsWith('new:')) {
+    const created = await store.ensureCollectionForTaxonomy(collectionId.slice(4));
+    if (!created) return;
+    collectionId = created.id;
+  }
   await store.moveItems([item.id], collectionId, { learn: 'light' });
   const col = await store.getCollection(collectionId);
   UI.toast(`Moved to ${col ? col.name : 'collection'}.`);
