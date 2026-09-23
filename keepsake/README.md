@@ -151,7 +151,7 @@ Off by default, and it needs **your own API key**. It's one switch (**Use AI**):
 - **Instant save**: clicking the toolbar icon or an on-page button saves immediately with no preview. The AI tidies the title and picks the collection; if it isn't confident (below your confidence threshold) a confident local pick is used, otherwise the item waits in Review. The popup shows *Saved to …* with Undo and a *Move to* menu; the on-page toast offers Move and Undo. Undo in the popup opens the normal editable preview.
 - **Fix with AI** (Review → *Fix all with AI*, or Optional AI → *Fix with AI* for all items or one collection): reads each item's live product page (optional, without cookies), then tidies titles, updates prices (the model may only choose a number that appears on the page or in the saved data), replaces missing/broken images, and files items into collections. From Review, an item is filed when the AI's confidence meets your threshold; elsewhere an item is only moved at ≥ 85% and never if you filed it yourself. Fixes apply immediately, and every change goes to the **AI change log** (`#ailog`) with per-item and per-run Undo. Dead links, out-of-stock items and unfixable broken images are listed at the end of a run.
 
-Local vs cloud in one sentence: everything in Keepsake — saving, extraction, categorization, dashboard, Instagram import — runs on your machine with no network; the only network call Keepsake ever makes is to the AI provider **you** configured, **when you click** a button that says what it will send.
+Local vs cloud in one sentence: everything in Keepsake — saving, extraction, categorization, dashboard, Instagram import — runs on your machine with no network; the only network calls Keepsake makes are to the AI provider **you** configured (when Optional AI is on: each save, and runs you start) and, for a *Fix with AI* run with live-page reading ticked, to your saved items' own product pages (without cookies).
 
 ## Privacy, export, import, erase
 
@@ -169,11 +169,11 @@ See [PRIVACY.md](PRIVACY.md) and the in-extension **Privacy** page. In short:
 | `storage` | install | Keep your items, collections and settings in `chrome.storage.local`. |
 | `activeTab` + `scripting` | install | When you click the icon, press the shortcut or use the context menu, read *that* page's title/price/images at that moment and show the confirmation toast. Nothing runs on pages otherwise. |
 | `contextMenus` | install | The "Save to Keepsake" right-click item. |
-| Site access (`optional_host_permissions`: `*://*/*`) | **only if you enable on-page buttons** | Run the hover-button script on the sites you granted (per site or all). Revocable in Settings or at `chrome://extensions`. |
+| Site access (`optional_host_permissions`: `*://*/*`) | **only if you enable on-page buttons, or start a *Fix with AI* run with live-page reading** | Run the hover-button script on the sites you granted (per site or all); read saved items' product pages during *Fix with AI*. Revocable in Settings or at `chrome://extensions`. |
 | `https://www.instagram.com/*` | **only if you use "Read post details"** | Read each imported post's own page (caption, creator, links, tagged products) with your existing session. Revocable under Settings → Instagram. |
-| Provider origin (e.g. `https://api.openai.com/*`) | **only if you enable AI** | Let the dashboard call the API you configured. Revoked when you disable AI. |
+| Provider origin (e.g. `https://api.openai.com/*`) | **only if you turn AI on** | Let the dashboard and background worker call the API you configured. Given back when you turn AI off. |
 
-No `tabs`, `history`, `cookies`, `webRequest`, `alarms` or `identity`. The background worker has no timers and no network access of its own.
+No `tabs`, `history`, `cookies`, `webRequest`, `alarms` or `identity`. The background worker has no timers; its only network access is the call to your AI provider on save when Optional AI is on.
 
 ## Limitations
 

@@ -486,6 +486,8 @@ export function renderAI(ctx, view) {
           }
         }
       }
+      // Turning AI off gives the provider permission back, as the privacy policy promises.
+      if (!on && originGranted && origin) await removeOrigin(origin);
       await ctx.store.updateSettings({ ai: { on } });
       draw();
       return true;
@@ -617,7 +619,7 @@ export function renderPrivacy(ctx, view) {
   ]));
   page.append(UI.section('What is stored', '', [
     el('div', { class: 'prose' }, [
-      el('p', {}, ['For each save: title, price, retailer, page URL, image URL (or, for Instagram imports, a small stored thumbnail), your note, flags such as favorite/purchased, which collection it is in and why. For categorization: your rules, and keyword/retailer weights learned from moves. For Instagram: which post URLs were already imported. Optional AI: your API key and provider settings, and a log of what “Fix with AI” changed so it can be undone.']),
+      el('p', {}, ['For each save: title, price, retailer, page URL, image URL (or, for Instagram imports, a small stored thumbnail), your note, flags such as favorite/purchased, which collection it is in and why, and the store’s product type and tags when the page publishes them. For categorization: your rules, and keyword/retailer weights learned from moves. For Instagram: which post URLs were already imported. Optional AI: your API key and provider settings, and a log of what “Fix with AI” changed so it can be undone.']),
       el('p', {}, ['Keepsake does not store browsing history, page contents beyond the fields above, or anything from pages you did not save from.']),
     ]),
   ]));

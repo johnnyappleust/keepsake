@@ -1,7 +1,8 @@
 // Keepsake background service worker (MV3, ES module).
 // It only wakes up for: install/startup, context-menu clicks, messages from
 // the popup/dashboard/content scripts, permission changes and settings changes.
-// It has no timers, no alarms and no network access of its own.
+// It has no timers and no alarms. Its only network access is the optional AI
+// provider call during a save, when the user has turned Optional AI on.
 
 import { createStore, chromeBackend } from './src/shared/storage.js';
 import { classify, learnFromCorrection, AUTO_FILE_CONFIDENCE } from './src/shared/categorizer.js';
