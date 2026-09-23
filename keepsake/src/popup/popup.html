@@ -33,7 +33,7 @@
       </div>
       <div class="skeleton skel-block"></div>
       <div class="skeleton skel-block short"></div>
-      <p class="muted small center">Looking at this page…</p>
+      <p class="muted small center" id="loadingText">Looking at this page…</p>
     </section>
 
     <!-- Restricted / unreadable page -->
@@ -171,6 +171,10 @@
         <h2 id="savedTitle">Saved</h2>
         <p class="muted" id="savedSubtitle"></p>
         <div class="saved-thumb" id="savedThumb"></div>
+        <div class="saved-move hidden" id="savedMoveRow">
+          <label class="small muted" for="savedMove">Move to</label>
+          <select class="select" id="savedMove"></select>
+        </div>
         <label class="check hidden" id="learnRow">
           <input type="checkbox" id="learnCheck" />
           <span>Use this choice for similar items in the future</span>

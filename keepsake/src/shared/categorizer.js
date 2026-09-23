@@ -25,6 +25,8 @@ import { DEFAULT_TAXONOMY, STOPWORDS } from './taxonomy.js';
 
 const FIELD_WEIGHTS = {
   title: 3,
+  productType: 3, // the store's own "type" for the product (Shopify product type, WooCommerce category)
+  tags: 1.5, // the store's product tags
   instagramCollection: 4,
   schemaCategory: 2.5,
   breadcrumbs: 2.5,
@@ -34,6 +36,15 @@ const FIELD_WEIGHTS = {
   caption: 1.2,
   retailer: 1,
 };
+// Saves that skip any preview (toolbar icon, on-page buttons, right-click) only
+// file an item straight into a collection at or above this confidence.
+export const AUTO_FILE_CONFIDENCE = 0.75;
+
+const IDENTITY_FIELDS = new Set(['title', 'productType', 'schemaCategory', 'breadcrumbs', 'instagramCollection']);
+const IDENTITY_KINDS = new Set(['rule', 'user', 'learned']);
+const NAME_FIELDS = new Set(['title', 'productType', 'schemaCategory', 'breadcrumbs', 'instagramCollection', 'tags']);
+// Site-navigation crumbs that say nothing about the product ("Home > Bedding > Sheets").
+const ROOT_CRUMBS = /^(home|homepage|home page|shop|shop all|store|all|all products|products|catalog|catalogue|collections|new|sale|en|us|en-us)$/i;
 const KW_WEIGHT = { strong: 3, regular: 1, user: 3, rule: 5, name: 3 };
 const MAX_LEARNED_WEIGHT = 6;
 
@@ -71,13 +82,21 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Plurals match without listing them: "hoodie" also matches "hoodies",
+// "dress" → "dresses", "battery" → "batteries".
+function pluralized(body) {
+  if (/[^aeiou]y$/.test(body)) return `${body.slice(0, -1)}(?:y|ies)`;
+  if (/[a-z]$/.test(body)) return `${body}(?:e?s)?`;
+  return body;
+}
+
 const regexCache = new Map();
 function keywordRegex(keyword) {
   let re = regexCache.get(keyword);
   if (re) return re;
   const prefix = keyword.endsWith('*');
   const body = escapeRegex(normalizeText(prefix ? keyword.slice(0, -1) : keyword)).replace(/\s+/g, '[\\s-]+');
-  re = new RegExp(`(?<![\\p{L}\\p{N}])${body}${prefix ? '[\\p{L}]*' : ''}(?![\\p{L}\\p{N}])`, 'iu');
+  re = new RegExp(`(?<![\\p{L}\\p{N}])${prefix ? `${body}[\\p{L}]*` : pluralized(body)}(?![\\p{L}\\p{N}])`, 'iu');
   regexCache.set(keyword, re);
   return re;
 }
@@ -170,17 +189,32 @@ export function resolveTaxonomy(collection) {
 
 // --- product text assembly ----------------------------------------------------
 
+// Phrases that say where or how something is used, not what it is. In
+// descriptions they caused false matches ("stay cozy at home" → Home Decor,
+// "on the job site" → Tools), so they're removed from descriptive fields.
+const USAGE_PHRASES = [
+  'at home', 'from home', 'around the house', 'around the home', 'in the home', 'on the job', 'job site', 'jobsite', 'at work',
+  'at the office', 'in the office', 'on the go', 'on the road', 'at the gym', 'to the gym', 'at the beach', 'at the campsite',
+  'on the trail', 'in the garden', 'in the kitchen', 'in the car', 'in the garage', 'or the garage', 'for the garage',
+];
+const USAGE_RE = new RegExp(`(?<![\\p{L}\\p{N}])(?:${USAGE_PHRASES.map((p) => p.replace(/\s+/g, '\\s+')).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+function withoutUsage(text) {
+  return text.replace(USAGE_RE, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function fieldsOf(product) {
   const p = product || {};
   const ig = p.instagram || {};
   const fields = {
     title: normalizeText(p.title),
-    description: normalizeText(p.description).slice(0, 1500),
+    productType: normalizeText(p.productType),
+    tags: normalizeText(Array.isArray(p.tags) ? p.tags.join(' , ') : p.tags).slice(0, 400),
+    description: withoutUsage(normalizeText(p.description)).slice(0, 1500),
     schemaCategory: normalizeText(p.schemaCategory || p.category),
-    breadcrumbs: normalizeText(Array.isArray(p.breadcrumbs) ? p.breadcrumbs.join(' ') : p.breadcrumbs),
+    breadcrumbs: normalizeText((Array.isArray(p.breadcrumbs) ? p.breadcrumbs : [p.breadcrumbs]).filter((c) => c && !ROOT_CRUMBS.test(String(c).trim())).join(' , ')),
     alt: normalizeText(p.imageAlt || p.alt),
-    cardText: normalizeText(p.cardText).slice(0, 600),
-    caption: normalizeText(ig.caption).slice(0, 1000),
+    cardText: withoutUsage(normalizeText(p.cardText)).slice(0, 600),
+    caption: withoutUsage(normalizeText(ig.caption)).slice(0, 1000),
     instagramCollection: normalizeText(ig.collectionName),
     retailer: normalizeText([p.retailer, p.host, p.brand].filter(Boolean).join(' ')),
   };
@@ -269,8 +303,10 @@ function collectMatches(candidate, candidateIndex, fields, prefs) {
       const m = matchKeyword(kw, text);
       if (m) add(field, kw, m, KW_WEIGHT.user, 'user');
     }
-    // Collection name / alias tokens appearing in the text ("Lamps" vs "table lamp")
-    if (!candidate.virtual) {
+    // Collection name / alias tokens appearing in the text ("Lamps" vs "table lamp").
+    // Only in fields that say what the product is: names like "Home", "Body" or
+    // "Gear" are everyday words in descriptions ("home office", "full body").
+    if (!candidate.virtual && NAME_FIELDS.has(field)) {
       const textStems = new Set(tokenize(text).map(stem));
       for (const nt of candidate.nameTokens) {
         const parts = nt.split(' ');
@@ -351,15 +387,23 @@ export function classify(product, context = {}) {
 
   const scores = candidates.map(() => 0);
   const explain = candidates.map(() => []);
+  // Whether a candidate has evidence about what the product *is*: a match in the
+  // title, the store's type/category/breadcrumbs, or the user's own words and history.
+  const identified = candidates.map(() => false);
   const seen = new Set();
-  for (const m of all) {
+  const tally = (m) => {
     const key = `${m.candidateIndex}|${m.field}|${m.keyword}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
     const fw = FIELD_WEIGHTS[m.field] || 1;
     scores[m.candidateIndex] += fw * m.weight;
+    if (IDENTITY_FIELDS.has(m.field) || IDENTITY_KINDS.has(m.kind)) identified[m.candidateIndex] = true;
     if (explain[m.candidateIndex].length < 4) explain[m.candidateIndex].push(m);
-  }
+  };
+  for (const m of all) if (m.field !== 'tags') tally(m);
+  // Store tags are often merchandising ("Holiday Gift Guide", "Bundle"), so they
+  // only back up a category the product is already identified with.
+  for (const m of all) if (m.field === 'tags' && identified[m.candidateIndex]) tally(m);
 
   // 3. Retailer preferences learned from past behaviour.
   const host = product?.host || product?.retailerHost || '';
@@ -369,13 +413,14 @@ export function classify(product, context = {}) {
       const count = cand.id ? retailerPrefs[cand.id] : 0;
       if (count >= 2) {
         scores[i] += Math.min(8, count * 2);
+        identified[i] = true;
         explain[i].push({ field: 'retailer', keyword: host, matched: host, weight: count, kind: 'retailer' });
       }
     });
   }
 
   const ranked = candidates
-    .map((cand, i) => ({ cand, score: scores[i], why: explain[i] }))
+    .map((cand, i) => ({ cand, score: scores[i], why: explain[i], identified: identified[i] }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score || (a.cand.virtual === b.cand.virtual ? 0 : a.cand.virtual ? 1 : -1));
 
@@ -391,8 +436,11 @@ export function classify(product, context = {}) {
   }
 
   const top = ranked[0];
-  const second = ranked[1] ? ranked[1].score : 0;
-  let confidence = (top.score - 0.5 * second) / (top.score + 3);
+  // A runner-up only drags confidence down fully when it also has identity
+  // evidence. Words that merely show up in a description ("wrench", "print")
+  // count for much less when the winner is clearly named in the title or type.
+  const rivalry = ranked.slice(1).reduce((max, r) => Math.max(max, r.score * (r.identified || !top.identified ? 0.5 : 0.15)), 0);
+  let confidence = (top.score - rivalry) / (top.score + 3);
   confidence = Math.max(0, Math.min(0.98, confidence));
   // A single low-weight regular keyword should never look confident.
   if (top.score < 3) confidence = Math.min(confidence, 0.35);
@@ -429,7 +477,7 @@ function describeWhy(why) {
       parts.push(`you usually file items from ${w.matched} here`);
       continue;
     }
-    const label = { title: 'title', description: 'description', schemaCategory: 'category', breadcrumbs: 'breadcrumbs', alt: 'image text', cardText: 'card text', caption: 'caption', instagramCollection: 'Instagram collection' }[w.field] || w.field;
+    const label = { title: 'title', description: 'description', schemaCategory: 'category', productType: 'the store’s product type', tags: 'tags', breadcrumbs: 'breadcrumbs', alt: 'image text', cardText: 'card text', caption: 'caption', instagramCollection: 'Instagram collection' }[w.field] || w.field;
     if (!byField.has(label)) byField.set(label, []);
     const tag = w.kind === 'learned' ? ' (learned)' : w.kind === 'rule' || w.kind === 'user' ? ' (your rule)' : '';
     byField.get(label).push(`“${w.matched}”${tag}`);

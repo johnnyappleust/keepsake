@@ -16,6 +16,7 @@ All data lives in `chrome.storage.local` for the browser profile you installed i
 | `keepsake_settings` | Theme, on-page button options, Instagram import options, AI provider settings (provider, base URL, model, enabled flags), onboarding flag. |
 | `keepsake_importHistory` | Which Instagram post URLs have already been imported, so re-scans don't duplicate. |
 | `keepsake_secrets` | Your AI API key, if you added one. **Excluded from exports.** |
+| `keepsake_aiLog` | What *Fix with AI* changed (item id and title, each field's value before and after, the AI's one-line reason), capped at 3,000 entries, so changes can be undone. **Excluded from exports.** |
 | `keepsake_meta` | Schema version for migrations. |
 | `keepsake_igScan` (session only) | Progress and results of an Instagram scan in progress; cleared after import or when the browser closes. |
 
@@ -33,15 +34,18 @@ Displayed images are loaded from their original sites (the retailer's CDN, Insta
 
 ## Network access
 
-Keepsake makes **no network requests of its own**, with one exception that you control:
+Keepsake makes **no network requests of its own**, with two exceptions that you control:
 
-**Optional AI ("Find products in Instagram saves" and "AI-assisted categorization")** — off by default. If you enable it:
+**Optional AI** — off by default, and a single switch. If you turn it on:
 
 - You choose the provider (OpenAI, Anthropic, or a custom OpenAI-compatible endpoint) and supply **your own API key**. Keepsake asks Chrome for permission to contact only that provider's origin; disabling AI revokes it.
 - When you click *Find this product online*, Keepsake shows the exact payload first: the post's locally stored thumbnail (as an image) and its caption, creator and Saved-collection name (as text). Remote Instagram URLs are not forwarded. Nothing else is sent.
 - With web search enabled, the provider runs its own web searches (up to three per post) using that text. Those searches happen on the provider's servers under its policy; Keepsake sends nothing extra and keeps only links that appear in the provider's own search results, discarding any the model invented.
-- When *Use AI to help categorize uncertain saves* is on, a save's title, description, retailer, category/breadcrumbs and the **names** of your collections are sent, only when the local categorizer is unsure.
+- Every save sends that item's title, price, description, retailer, category/breadcrumbs and the **names** of your collections. The AI's tidied title and collection choice are applied immediately; the save toast offers Undo and Move.
+- When you start *Fix with AI* (from Review or the AI page), Keepsake sends, for each item in the scope you picked: its title, price, retailer, a short description or caption, its current collection name, and — if you allowed live-page reading — the title, price and availability found on its product page, plus your collection names. Every change it applies is recorded in a local change log (`keepsake_aiLog`) so it can be undone; the log is never exported.
 - The provider's own privacy policy and pricing apply to those requests. Responses are stored with the item as clearly labelled, possibly inaccurate suggestions; links returned by a model are discarded.
+
+**Live product pages ("Fix with AI" only)** — if you tick *Read each item's live product page* when starting a run, Keepsake fetches the saved page URL of each item in that run, from your browser, **without cookies** (`credentials: 'omit'`), and reads only its structured product data (JSON-LD and product meta tags) with a parser that never runs the page's scripts. Nothing from those pages is stored except the fixes that are applied. This needs the optional all-sites permission.
 
 ## Permissions
 
@@ -53,6 +57,7 @@ Keepsake makes **no network requests of its own**, with one exception that you c
 | Optional site access (`*://*/*` or individual sites) | Requested **only** if you enable on-page save buttons. Revoke in Keepsake's settings or at `chrome://extensions`. Leaving "all sites" mode returns the permission automatically. |
 | Optional `https://www.instagram.com/*` | Requested **only** when you use "Read post details" during an Instagram import. Revoke under Settings → Instagram. |
 | Optional provider origin (e.g. `https://api.openai.com/*`) | Requested **only** if you enable AI; revoked when you disable it. |
+| Optional all sites (`*://*/*`) for *Fix with AI* | Requested **only** when you start a *Fix with AI* run with live-page reading ticked, to fetch your saved items' product pages. Also used by on-page buttons if you enabled them for all sites. |
 
 Keepsake does not request `tabs`, `history`, `cookies`, `webRequest`, `identity`, `alarms` or any other permission.
 

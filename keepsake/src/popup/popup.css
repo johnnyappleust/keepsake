@@ -480,6 +480,19 @@ body {
   color: var(--ink-2);
 }
 
+.saved-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  text-align: left;
+}
+
+.saved-move .select {
+  flex: 1;
+  min-width: 0;
+}
+
 .saved-actions {
   display: flex;
   justify-content: center;

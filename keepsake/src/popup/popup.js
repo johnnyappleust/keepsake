@@ -7,7 +7,7 @@ import { createStore, chromeBackend } from '../shared/storage.js';
 import { MSG, SESSION_KEYS } from '../shared/messages.js';
 import { el, clear, parsePrice, sanitizeText, pluralize } from '../shared/util.js';
 import { isRestrictedUrl } from '../shared/url.js';
-import { learnFromCorrection } from '../shared/categorizer.js';
+import { learnFromCorrection, AUTO_FILE_CONFIDENCE } from '../shared/categorizer.js';
 
 const store = createStore(chromeBackend());
 const $ = (id) => document.getElementById(id);
@@ -33,6 +33,7 @@ const state = {
   userOverride: false,
   savedItem: null,
   savedMode: 'saved', // saved | updated
+  instant: false, // saved straight away (AI, or a confident local pick), without the preview
   ig: null,
   igScanListener: null,
 };
@@ -117,6 +118,46 @@ async function loadProduct() {
   }
   state.product = extracted.product;
   state.chosenImage = state.product.image || '';
+  // Pages already saved always get the preview, with its "update existing" option.
+  if (!(await store.findByUrl(state.product.canonicalUrl || state.product.url).catch(() => null))) {
+    if (await instantSaveOn()) {
+      if (await instantSave({ label: 'Saving with AI…' })) return;
+    } else {
+      const cls = await send({ type: MSG.CLASSIFY, product: state.product });
+      const c = cls.ok ? cls.classification : null;
+      if (c && !c.isInbox && c.confidence >= AUTO_FILE_CONFIDENCE && await instantSave({ label: 'Saving…', classification: c })) return;
+    }
+  }
+  await showPreview();
+}
+
+// With AI on (and a key saved), the popup always saves straight away: the AI
+// tidies the title and picks the collection in the background worker.
+async function instantSaveOn() {
+  try {
+    const settings = await store.getSettings();
+    return !!settings.ai?.on && !!(await store.getSecret('aiApiKey'));
+  } catch {
+    return false;
+  }
+}
+
+async function instantSave({ label, classification = null }) {
+  $('loadingText').textContent = label;
+  const res = await send({ type: MSG.SAVE_ITEM, product: state.product, source: 'toolbar', classification });
+  if (!res.ok || res.duplicate) return false;
+  state.instant = true;
+  state.collections = await store.getCollections().catch(() => state.collections); // may include one the save just created
+  state.savedItem = res.item;
+  state.savedMode = 'saved';
+  showSaved(res.item, res.collection);
+  return true;
+}
+
+// The editable preview: shown normally, for pages already saved, and after undoing an instant save.
+async function showPreview() {
+  $('loadingText').textContent = 'Looking at this page…';
+  show('state-loading');
   const [cls, dup] = await Promise.all([
     send({ type: MSG.CLASSIFY, product: state.product }),
     store.findByUrl(state.product.canonicalUrl || state.product.url).catch(() => null),
@@ -427,17 +468,50 @@ function showSaved(item, collection) {
       /* best effort */
     }
   };
+  renderSavedMove(item);
   $('savedUndo').onclick = async () => {
     $('savedUndo').disabled = true;
     await send({ type: MSG.UNDO_SAVE, itemId: item.id });
     state.duplicate = null;
-    renderDuplicate();
-    show('state-product');
+    if (state.instant) {
+      // Nothing was previewed yet: undoing an instant save opens the editable preview instead.
+      state.instant = false;
+      await showPreview();
+    } else {
+      renderDuplicate();
+      show('state-product');
+    }
     $('savedUndo').disabled = false;
   };
-  $('savedOpen').onclick = () => openDashboard(`#item/${item.id}`);
+  // Show the item where it landed: its collection, or Review if it wasn't filed.
+  $('savedOpen').onclick = () => openDashboard(state.savedItem?.collectionId ? `#c/${state.savedItem.collectionId}` : '#review');
   show('state-saved');
   setTimeout(() => $('savedOpen').focus(), 30);
+}
+
+// After an instant save: one-step "Move to" in case the AI picked the wrong collection.
+function renderSavedMove(item) {
+  const row = $('savedMoveRow');
+  row.classList.toggle('hidden', !(state.instant && state.savedMode === 'saved'));
+  if (!state.instant) return;
+  const sel = $('savedMove');
+  clear(sel);
+  if (!item.collectionId) sel.append(el('option', { value: '', text: 'Review (not sorted)' }));
+  for (const c of state.collections) sel.append(el('option', { value: c.id, text: c.name }));
+  sel.value = item.collectionId || '';
+  sel.onchange = async () => {
+    if (!sel.value) return;
+    sel.disabled = true;
+    const res = await send({ type: MSG.UPDATE_ITEM, itemId: item.id, patch: { collectionId: sel.value }, learn: 'light' });
+    sel.disabled = false;
+    if (!res.ok) return;
+    state.savedItem = res.item;
+    const col = state.collections.find((c) => c.id === sel.value);
+    $('savedTitle').textContent = `Moved to ${col ? col.name : 'collection'}`;
+    $('savedInboxHint').textContent = '';
+    const placeholder = sel.querySelector('option[value=""]');
+    if (placeholder) placeholder.remove();
+  };
 }
 
 // --- Instagram import ------------------------------------------------------------------------------

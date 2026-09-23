@@ -1951,3 +1951,83 @@ body.modal-open {
 .url-row .btn {
   flex: none;
 }
+
+/* --- Fix with AI --- */
+.review-ai {
+  margin: -8px 0 18px;
+}
+
+.modal-list {
+  margin: 10px 0 12px;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.modal-list li + li {
+  margin-top: 4px;
+}
+
+.ai-notes {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.ai-notes summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.ai-log-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-log-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.ai-log-row:first-child {
+  border-top: 0;
+}
+
+.ai-log-row.is-undone .ai-log-main {
+  opacity: .55;
+}
+
+.ai-log-main {
+  min-width: 0;
+}
+
+.ai-log-title {
+  font-weight: 500;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.ai-log-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ai-change {
+  font-size: 12.5px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--paper-3);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.ai-change-from {
+  text-decoration: line-through;
+  opacity: .75;
+}
