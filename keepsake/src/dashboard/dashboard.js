@@ -11,6 +11,7 @@ import * as UI from './ui.js';
 import { renderSettings, renderAI, renderPrivacy, analyzeItems } from './settings.js';
 import { renderImport } from './importer.js';
 import { renderTabsImport } from './tabsImport.js';
+import { runAiCleanup, renderAiLog } from './aiCleanup.js';
 
 const store = createStore(chromeBackend());
 const $ = (id) => document.getElementById(id);
@@ -336,6 +337,7 @@ function renderToolbar() {
   else if (r.name === 'settings') title = 'Settings';
   else if (r.name === 'privacy') title = 'Privacy';
   else if (r.name === 'ai') title = 'Optional AI';
+  else if (r.name === 'ailog') title = 'AI change log';
   else if (r.name === 'welcome') title = 'Welcome';
   else if (r.name === 'c') title = ctx.collectionById(r.id)?.name || 'Collection';
   $('viewTitle').textContent = title;
@@ -362,7 +364,7 @@ function renderToolbar() {
     $('searchInput').value = state.search;
     $('selectToggle').setAttribute('aria-pressed', state.selecting ? 'true' : 'false');
     $('selectToggle').textContent = state.selecting ? 'Done' : 'Select';
-    $('bulkAi').classList.toggle('hidden', !state.settings?.ai?.enabled);
+    $('bulkAi').classList.toggle('hidden', !state.settings?.ai?.on);
   }
 }
 
@@ -378,6 +380,9 @@ function renderView({ keepScroll = false } = {}) {
       break;
     case 'ai':
       renderAI(ctx, view);
+      break;
+    case 'ailog':
+      renderAiLog(ctx, view);
       break;
     case 'privacy':
       renderPrivacy(ctx, view);
@@ -1092,8 +1097,8 @@ function renderAiBox(box, item) {
   const ai = state.settings?.ai;
   const eligible = item.type === 'instagram' || item.type === 'inspiration';
   if (!eligible) return;
-  if (!ai?.enabled) {
-    box.append(el('div', { class: 'help' }, ['Want Keepsake to work out what product this post shows and find where to buy it? Turn on “Find products in Instagram saves” under Optional AI (it uses your own API key).']));
+  if (!ai?.on) {
+    box.append(el('div', { class: 'help' }, ['Want Keepsake to work out what product this post shows and find where to buy it? Turn on Optional AI (it uses your own API key).']));
     return;
   }
   const s = item.ai;
@@ -1244,6 +1249,12 @@ function renderReview(view) {
   const items = state.items.filter((i) => !i.collectionId && !i.archived);
   const page = el('div', { class: 'page page-wide' });
   page.append(el('p', { class: 'page-intro' }, ['Keepsake wasn’t confident enough to file these automatically. Pick a collection for each and it learns for next time.']));
+  if (items.length && state.settings?.ai?.on) {
+    page.append(el('div', { class: 'actions-row review-ai' }, [
+      el('button', { type: 'button', class: 'btn btn-primary', onClick: () => runAiCleanup(ctx, { scope: 'review' }) }, [`Fix all ${items.length} with AI`]),
+      el('span', { class: 'help' }, ['Tidies titles and prices, and files each item where the AI is confident. Every change can be undone.']),
+    ]));
+  }
   if (!items.length) {
     page.append(UI.emptyState({ title: 'Nothing to review', message: 'Uncategorized saves show up here. You’re all caught up.', icon: UI.checkIcon() }));
     view.append(page);
@@ -1344,7 +1355,7 @@ function renderWelcome(view) {
     ]),
     el('div', { class: 'steps' }, [
       step(1, 'Pin the icon', 'Click the puzzle-piece in Chrome’s toolbar and pin Keepsake so it’s one click away. Alt+Shift+K opens it too.'),
-      step(2, 'Save from any page', 'On a product page, click the icon. Keepsake reads the title, price and image, picks a collection and shows you before saving.'),
+      step(2, 'Save from any page', 'On a product page, click the icon. Keepsake reads the title, price and image and saves it straight to the right collection when it’s sure; otherwise it shows you first.'),
       step(3, 'Let it learn', 'Move an item and Keepsake remembers. Unsure saves wait in Review instead of guessing.'),
       step(4, 'Optional extras', 'On-page save buttons for product grids, and an Instagram Saved-collection importer — both off until you turn them on.'),
     ]),

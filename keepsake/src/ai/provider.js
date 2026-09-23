@@ -2,12 +2,14 @@
 // extension — saving, categorization, dashboard, Instagram import — works
 // without this module ever being called.
 //
-// When the user enables it (and supplies their own API key), exactly two
-// things can be sent to the provider they chose:
+// When the user enables it (and supplies their own API key), only these can
+// be sent to the provider they chose:
 //   1. "Find products in Instagram saves": the selected post's thumbnail
 //      (as an image) and its caption/creator text.
-//   2. Categorization assist: the product's title, description and the list
-//      of the user's collection names.
+//   2. Instant save: the product's title, price,
+//      description, retailer and the list of the user's collection names.
+//   3. "Clean up with AI": the same fields for each item being checked, plus
+//      the title/price/availability read from its live product page.
 // Nothing else leaves the browser: no cookies, no account data, no history.
 
 export const PROVIDERS = {
@@ -252,17 +254,84 @@ export async function findProductOnline(post, settings, apiKey) {
   }
 }
 
-export async function classifyWithAI(product, collections, settings, apiKey) {
+// --- Cleanup: tidy titles, confirm prices, pick collections --------------------------------------
+// One request handles a batch of items. The model may only choose a price
+// that already appears in the item's stored or live-page data, and only an
+// existing collection name; anything else is dropped here, so it can tidy
+// and sort but never invent a price or a collection.
+
+export const CLEANUP_BATCH = 8;
+
+const CLEANUP_SYSTEM = `You tidy up a shopper's saved products and file them into their existing collections.
+For each item you get the saved fields and, when available, "live" fields read from the product page today.
+Return ONLY JSON: {"items":[{"ref":"…","title":"…","price":number|null,"currency":"ISO code or empty","collection":"exact collection name or null","confidence":0-1,"reason":"short"}]}
+Rules:
+- title: a clean, specific product name a shopper would recognise. Keep brand, model, size, colour and edition. Remove store names, SEO filler, "Buy now", "Free shipping", promo text, pipes and site suffixes. Never add facts that are not in the input. If the saved title is already good, return it unchanged.
+- price: the product's current selling price. It MUST be one of the numbers given for that item (saved price, live price or live price candidates); prefer the live price. Use null if none is trustworthy (for example a unit price, a monthly instalment or a shipping fee).
+- collection: the single best collection from the list, or null when none fits. confidence is how sure you are of the collection (0.9+ only when it clearly belongs).
+- Return one entry per input ref, in any order.`;
+
+function priceOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+// entries: [{ ref, item: {title, price, currency, retailer, host, description, type, breadcrumbs}, currentCollection, live: {title, price, currency, availability, priceCandidates} | null }]
+export async function cleanupWithAI(entries, collections, settings, apiKey) {
   const cfg = providerConfig(settings);
   const names = collections.map((c) => c.name);
-  const system = `You file shopping items into a user's existing collections. Collections: ${JSON.stringify(names)}. Respond ONLY with JSON {"collection":"exact collection name or null","confidence":0-1,"reason":"short"}. Use null when nothing fits well.`;
-  const userText = `Title: ${product.title || ''}\nDescription: ${(product.description || '').slice(0, 400)}\nRetailer: ${product.retailer || product.host || ''}\nCategory: ${product.schemaCategory || ''}\nBreadcrumbs: ${(product.breadcrumbs || []).join(' > ')}`;
-  const raw = await callProvider(cfg, apiKey, { system, userText, maxTokens: 120 });
+  const payload = entries.map((e) => {
+    const it = e.item || {};
+    const out = {
+      ref: e.ref,
+      saved: {
+        title: String(it.title || '').slice(0, 200),
+        price: priceOrNull(it.price),
+        currency: it.currency || '',
+        retailer: it.retailer || it.host || '',
+        description: String(it.description || '').slice(0, 300),
+      },
+    };
+    if (it.breadcrumbs && it.breadcrumbs.length) out.saved.breadcrumbs = it.breadcrumbs.slice(0, 6).join(' > ');
+    if (it.productType) out.saved.storeProductType = String(it.productType).slice(0, 80);
+    if (e.currentCollection) out.currentCollection = e.currentCollection;
+    if (e.live) {
+      out.live = {
+        title: String(e.live.title || '').slice(0, 200),
+        price: priceOrNull(e.live.price),
+        currency: e.live.currency || '',
+        availability: e.live.availability || '',
+        priceCandidates: (e.live.priceCandidates || []).map(priceOrNull).filter((n) => n !== null).slice(0, 6),
+      };
+    }
+    return out;
+  });
+  const userText = `Collections: ${JSON.stringify(names)}\n\nItems:\n${JSON.stringify(payload)}`;
+  const raw = await callProvider(cfg, apiKey, { system: CLEANUP_SYSTEM, userText, maxTokens: 220 * entries.length + 100 });
   const parsed = parseJsonBlock(raw);
-  if (!parsed) return null;
-  const match = collections.find((c) => c.name.toLowerCase() === String(parsed.collection || '').toLowerCase());
-  if (!match) return null;
-  return { collectionId: match.id, collectionName: match.name, confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)), reason: String(parsed.reason || 'AI suggestion').slice(0, 200) };
+  const list = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+  const byRef = new Map(payload.map((p) => [p.ref, p]));
+  const out = new Map();
+  for (const r of list) {
+    const src = r && byRef.get(String(r.ref));
+    if (!src) continue;
+    const allowed = [src.saved.price, src.live?.price, ...(src.live?.priceCandidates || [])].filter((n) => n !== null);
+    const price = priceOrNull(r.price);
+    const priceOk = price !== null && allowed.some((a) => Math.abs(a - price) < 0.005);
+    const match = collections.find((c) => c.name.toLowerCase() === String(r.collection || '').toLowerCase()) || null;
+    const title = typeof r.title === 'string' ? r.title.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+    out.set(src.ref, {
+      title: title.length >= 3 ? title : '',
+      price: priceOk ? price : null,
+      currency: priceOk ? String(r.currency || src.live?.currency || src.saved.currency || '').toUpperCase().slice(0, 8) : '',
+      collectionId: match ? match.id : null,
+      collectionName: match ? match.name : '',
+      confidence: match ? Math.max(0, Math.min(1, Number(r.confidence) || 0)) : 0,
+      reason: String(r.reason || '').slice(0, 200),
+    });
+  }
+  return out;
 }
 
 export async function testConnection(settings, apiKey) {

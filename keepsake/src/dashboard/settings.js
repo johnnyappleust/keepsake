@@ -7,6 +7,7 @@ import { originPattern, hostFromPattern } from '../shared/url.js';
 import { emptyPrefs } from '../shared/categorizer.js';
 import { PROVIDERS, providerConfig, originFor, describePayload, analyzePost, testConnection, findProductOnline, supportsWebLookup } from '../ai/provider.js';
 import * as UI from './ui.js';
+import { cleanupSection } from './aiCleanup.js';
 import { hasInstagramAccess, revokeInstagramAccess } from '../instagram/enrich.js';
 
 const ALL_SITES = '*://*/*';
@@ -110,7 +111,7 @@ function floatingSection(ctx) {
       if (all) box.append(el('div', { class: 'actions-row' }, [el('button', { type: 'button', class: 'btn btn-sm', onClick: async () => { await removeOrigin(ALL_SITES); await ctx.store.updateSettings({ floating: { mode: 'off' } }); await ctx.send({ type: MSG.FLOATING_REFRESH }); UI.toast('Site access revoked. On-page buttons are off.'); draw(); } }, ['Revoke all-site access'])]));
     }
 
-    // Selected sites
+    // Selected sites: only meaningful when buttons run on sites the user picks.
     const siteList = el('ul', { class: 'site-list' });
     const sites = s.sites || [];
     if (!sites.length) siteList.append(el('li', { class: 'help' }, ['No sites yet. Add a site to grant access there.']));
@@ -146,11 +147,11 @@ function floatingSection(ctx) {
       draw();
     } }, ['Add site']);
     siteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
-    box.append(el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Sites with on-page buttons']), siteList, el('div', { class: 'inline-form' }, [siteInput, addBtn])]));
+    if (s.mode === 'selected') box.append(el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Sites with on-page buttons']), siteList, el('div', { class: 'inline-form' }, [siteInput, addBtn])]));
 
-    // Hidden sites
+    // Hidden sites: the way to opt individual sites out when buttons run everywhere.
     const hidden = s.hiddenSites || [];
-    const hiddenChips = el('div', { class: 'chips' }, hidden.length ? hidden.map((h) => el('span', { class: 'chip' }, [h, el('button', { type: 'button', 'aria-label': `Show buttons on ${h} again`, onClick: async () => { await ctx.store.updateSettings({ floating: { hiddenSites: hidden.filter((x) => x !== h) } }); await ctx.send({ type: MSG.FLOATING_REFRESH }); draw(); } }, [UI.closeIcon()])])) : [el('span', { class: 'help' }, ['None. Use “Hide on this site” from a button’s menu on the page, or add one here.'])]);
+    const hiddenChips = el('div', { class: 'chips' }, hidden.length ? hidden.map((h) => el('span', { class: 'chip' }, [h, el('button', { type: 'button', 'aria-label': `Show buttons on ${h} again`, onClick: async () => { await ctx.store.updateSettings({ floating: { hiddenSites: hidden.filter((x) => x !== h) } }); await ctx.send({ type: MSG.FLOATING_REFRESH }); draw(); } }, [UI.closeIcon()])])) : [el('span', { class: 'help' }, ['None. Add a site here to keep buttons off it.'])]);
     const hideInput = el('input', { class: 'input', placeholder: 'news.example.com', 'aria-label': 'Site to hide buttons on', spellcheck: 'false' });
     const hideBtn = el('button', { type: 'button', class: 'btn', onClick: async () => {
       const host = hideInput.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
@@ -161,17 +162,17 @@ function floatingSection(ctx) {
       draw();
     } }, ['Hide here']);
     hideInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); hideBtn.click(); } });
-    box.append(el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Hidden on these sites']), hiddenChips, el('div', { class: 'inline-form' }, [hideInput, hideBtn])]));
+    // Hidden sites apply in every mode, so in "selected" mode the list still shows while it has entries (so they can be removed).
+    if (s.mode === 'all' || (s.mode === 'selected' && hidden.length)) box.append(el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Hidden on these sites']), hiddenChips, el('div', { class: 'inline-form' }, [hideInput, hideBtn])]));
 
     const rows = el('div', {}, [
       UI.settingRow('Button size', UI.selectInput({ value: s.size, options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }], onChange: (v) => ctx.store.updateSettings({ floating: { size: v } }), label: 'Button size' })),
       UI.settingRow('Button position', UI.selectInput({ value: s.position, options: [{ value: 'top-right', label: 'Top right of card' }, { value: 'top-left', label: 'Top left' }, { value: 'bottom-right', label: 'Bottom right' }, { value: 'bottom-left', label: 'Bottom left' }], onChange: (v) => ctx.store.updateSettings({ floating: { position: v } }), label: 'Button position' })),
-      UI.settingRow('Ask before saving', UI.switchInput({ checked: s.requireConfirm, onChange: (v) => ctx.store.updateSettings({ floating: { requireConfirm: v } }), label: 'Ask before saving' }), 'Show a collection picker instead of saving instantly.'),
-      UI.settingRow('Auto-file confident saves', UI.switchInput({ checked: s.autoSaveHighConfidence, onChange: (v) => ctx.store.updateSettings({ floating: { autoSaveHighConfidence: v } }), label: 'Auto-file confident saves' }), 'When off, every on-page save asks which collection to use.'),
-      UI.settingRow('Leave uncertain saves for Review', UI.switchInput({ checked: s.uncertainToInbox, onChange: (v) => ctx.store.updateSettings({ floating: { uncertainToInbox: v } }), label: 'Leave uncertain saves for Review' }), 'When off, Keepsake asks you to pick a collection for low-confidence saves.'),
     ]);
-    box.append(rows);
-    box.append(el('p', { class: 'help' }, ['Pressing Alt+Shift+S on a page with buttons enabled saves the card you are hovering or focused on.']));
+    if (s.mode !== 'off') {
+      box.append(rows);
+      box.append(el('p', { class: 'help' }, ['Pressing Alt+Shift+S on a page with buttons enabled saves the card you are hovering or focused on.']));
+    }
   };
   draw();
   return UI.section('On-page save buttons', 'A small “Save” button on product cards and main product images. Off by default; runs only on sites you allow.', [box]);
@@ -294,7 +295,7 @@ function instagramSection(ctx) {
 function aiSummarySection(ctx) {
   const ai = ctx.state.settings.ai;
   return UI.section('Optional AI (beta)', 'Off by default. Uses your own API key with the provider you choose; nothing is sent until you enable it and confirm.', [
-    UI.settingRow('Status', el('span', { class: `pill ${ai.enabled || ai.useForCategorization ? 'pill-warn' : ''}` }, [ai.enabled || ai.useForCategorization ? `Enabled · ${PROVIDERS[ai.provider]?.label || ai.provider}` : 'Off — everything runs locally'])),
+    UI.settingRow('Status', el('span', { class: `pill ${ai.on ? 'pill-warn' : ''}` }, [ai.on ? `On · ${PROVIDERS[ai.provider]?.label || ai.provider}` : 'Off — everything runs locally'])),
     el('div', { class: 'actions-row' }, [el('button', { type: 'button', class: 'btn', onClick: () => ctx.navigate('#ai') }, ['Open AI settings'])]),
   ]);
 }
@@ -403,10 +404,11 @@ export function renderAI(ctx, view) {
 
     box.append(UI.section('What this does — and what leaves your browser', '', [
       el('div', { class: 'prose' }, [
-        el('p', {}, ['Keepsake never needs the internet. This optional feature lets you connect your own AI provider account for two things:']),
+        el('p', {}, ['Keepsake never needs the internet. Turning on Optional AI connects your own AI provider account, and then:']),
         el('ul', {}, [
-          el('li', {}, [el('strong', {}, ['Find products in Instagram saves (beta): ']), 'for a post you select, Keepsake sends the locally stored thumbnail (a small JPEG) plus the caption, creator name and the Saved-collection name to the provider, and shows back product guesses with “Search the web” buttons. It never invents purchase links, and results can be wrong.']),
-          el('li', {}, [el('strong', {}, ['Categorization assist: ']), 'when the local engine isn’t confident, Keepsake sends the item’s title, description, retailer name and your collection names, and uses the answer if it is confident.']),
+          el('li', {}, [el('strong', {}, ['Saves are instant: ']), 'every time you save, Keepsake sends the item’s title, price, description, retailer and your collection names. The AI tidies the title and picks the collection, and the item is saved right away with no preview (“Saved to …”, with Undo and Move). If the AI isn’t confident, the item waits in Review.']),
+          el('li', {}, [el('strong', {}, ['Fix with AI: ']), 'when you start it (from Review or below), Keepsake sends the same fields for each item being checked, plus the title, price and availability read from its live product page. Pages are fetched from this browser without your cookies.']),
+          el('li', {}, [el('strong', {}, ['Find products in Instagram saves: ']), 'for a post you select, Keepsake sends the locally stored thumbnail (a small JPEG) plus the caption, creator name and the Saved-collection name, and shows back product guesses. It never invents purchase links, and results can be wrong.']),
         ]),
         el('p', {}, ['Nothing else is ever sent: no browsing history, no cookies, no Instagram account data, no other items. Your key is stored only in this browser and is excluded from exports.']),
       ]),
@@ -430,8 +432,8 @@ export function renderAI(ctx, view) {
     } }, ['Save key']);
     const removeKey = el('button', { type: 'button', class: 'btn btn-quiet', disabled: !key, onClick: async () => {
       await ctx.store.setSecret('aiApiKey', '');
-      await ctx.store.updateSettings({ ai: { enabled: false, useForCategorization: false } });
-      UI.toast('Key removed and AI features turned off.');
+      await ctx.store.updateSettings({ ai: { on: false } });
+      UI.toast('Key removed and Optional AI turned off.');
       draw();
     } }, ['Remove key']);
     const testBtn = el('button', { type: 'button', class: 'btn', disabled: !key, onClick: async () => {
@@ -457,10 +459,10 @@ export function renderAI(ctx, view) {
       UI.settingRow('Model', modelInput, `Default: ${PROVIDERS[ai.provider]?.model || '—'}`),
       UI.settingRow('API key', el('div', { class: 'inline-form' }, [keyInput, saveKey, removeKey]), 'Stored under keepsake_secrets in chrome.storage.local. Never exported.'),
       UI.settingRow('Permission to contact the provider', el('span', { class: `pill ${originGranted ? 'pill-ok' : 'pill-warn'}` }, [originGranted ? `Granted for ${origin}` : origin ? 'Not granted yet' : 'Set a valid https base URL']), 'Chrome asks for this when you enable a feature or test the connection. Revoke it any time below or at chrome://extensions.'),
-      el('div', { class: 'actions-row' }, [testBtn, originGranted && origin ? el('button', { type: 'button', class: 'btn btn-quiet', onClick: async () => { await removeOrigin(origin); await ctx.store.updateSettings({ ai: { enabled: false, useForCategorization: false } }); draw(); } }, ['Revoke permission & turn off']) : null]),
+      el('div', { class: 'actions-row' }, [testBtn, originGranted && origin ? el('button', { type: 'button', class: 'btn btn-quiet', onClick: async () => { await removeOrigin(origin); await ctx.store.updateSettings({ ai: { on: false } }); draw(); } }, ['Revoke permission & turn off']) : null]),
     ]));
 
-    const enableFeature = async (field, on) => {
+    const setAiOn = async (on) => {
       if (on) {
         if (!key) {
           UI.toast('Save your API key first.', { kind: 'danger' });
@@ -471,29 +473,30 @@ export function renderAI(ctx, view) {
           return false;
         }
         const confirmed = await UI.confirmDialog({
-          title: field === 'enabled' ? 'Enable “Find products in Instagram saves”?' : 'Enable categorization assist?',
-          message: field === 'enabled'
-            ? `For posts you pick, Keepsake will send the stored thumbnail image and caption text to ${cfg.baseUrl}. Results are guesses and are labelled as such.`
-            : `When the local engine isn’t confident about a save, Keepsake will send the item’s title, description, retailer and your collection names to ${cfg.baseUrl}.`,
-          confirmLabel: 'Enable',
+          title: 'Turn on Optional AI?',
+          message: `Every save will send the item’s title, price, description, retailer and your collection names to ${cfg.baseUrl}, and be saved right away into the collection the AI picks. “Fix with AI” and “Find products” also become available; they only send anything when you start them.`,
+          confirmLabel: 'Turn on',
         });
         if (!confirmed) return false;
         if (!originGranted) {
           const ok = await requestOrigin(origin);
           if (!ok) {
-            UI.toast('Permission not granted, so the feature stays off.', { kind: 'danger' });
+            UI.toast('Permission not granted, so Optional AI stays off.', { kind: 'danger' });
             return false;
           }
         }
       }
-      await ctx.store.updateSettings({ ai: { [field]: on } });
+      // Turning AI off gives the provider permission back, as the privacy policy promises.
+      if (!on && originGranted && origin) await removeOrigin(origin);
+      await ctx.store.updateSettings({ ai: { on } });
+      draw();
       return true;
     };
 
-    box.append(UI.section('Features', '', [
-      UI.settingRow('Find products in Instagram saves (beta)', UI.switchInput({ checked: ai.enabled, onChange: async (v, input) => { if (!(await enableFeature('enabled', v))) input.checked = !v; }, label: 'Find products in Instagram saves' }), 'Adds a “Find products” button to imported posts. Off by default.'),
-      UI.settingRow('Categorization assist', UI.switchInput({ checked: ai.useForCategorization, onChange: async (v, input) => { if (!(await enableFeature('useForCategorization', v))) input.checked = !v; }, label: 'Categorization assist' }), 'Only runs when a save would otherwise be left uncategorized.'),
+    box.append(UI.section('Optional AI', '', [
+      UI.settingRow('Use AI', UI.switchInput({ checked: ai.on, onChange: async (v, input) => { if (!(await setAiOn(v))) input.checked = !v; }, label: 'Use AI' }), 'Instant saves, “Fix with AI” and “Find products”, all using the provider above.'),
     ]));
+    if (ai.on) box.append(cleanupSection(ctx));
   };
   draw();
   page.append(box);
@@ -503,8 +506,8 @@ export function renderAI(ctx, view) {
 // Runs the "find products" analysis for one or more items, with a payload preview first.
 export async function analyzeItems(ctx, items, { web = null } = {}) {
   const settings = ctx.state.settings;
-  if (!settings.ai?.enabled) {
-    UI.toast('Turn on “Find products in Instagram saves” under Optional AI first.');
+  if (!settings.ai?.on) {
+    UI.toast('Turn on Optional AI first.');
     ctx.navigate('#ai');
     return null;
   }
@@ -610,13 +613,13 @@ export function renderPrivacy(ctx, view) {
         permRow('storage', 'Keep your collections, items and settings in your browser.'),
         permRow('activeTab + scripting', 'Read the page you clicked the icon on (title, price, images) at that moment only, and show the save toast.'),
         permRow('contextMenus', 'The “Save to Keepsake” right-click item.'),
-        permRow('Site access (optional)', 'Only requested if you enable on-page buttons for a site or all sites, or connect an AI provider (its address only). Revoke any time here or at chrome://extensions.'),
+        permRow('Site access (optional)', 'Only requested if you enable on-page buttons for a site or all sites, connect an AI provider (its address only), or let “Fix with AI” read your saved items’ product pages (all sites). Revoke any time here or at chrome://extensions.'),
       ]),
     ])]),
   ]));
   page.append(UI.section('What is stored', '', [
     el('div', { class: 'prose' }, [
-      el('p', {}, ['For each save: title, price, retailer, page URL, image URL (or, for Instagram imports, a small stored thumbnail), your note, flags such as favorite/purchased, which collection it is in and why. For categorization: your rules, and keyword/retailer weights learned from moves. For Instagram: which post URLs were already imported. Optional AI: your API key and provider settings.']),
+      el('p', {}, ['For each save: title, price, retailer, page URL, image URL (or, for Instagram imports, a small stored thumbnail), your note, flags such as favorite/purchased, which collection it is in and why, and the store’s product type and tags when the page publishes them. For categorization: your rules, and keyword/retailer weights learned from moves. For Instagram: which post URLs were already imported. Optional AI: your API key and provider settings, and a log of what “Fix with AI” changed so it can be undone.']),
       el('p', {}, ['Keepsake does not store browsing history, page contents beyond the fields above, or anything from pages you did not save from.']),
     ]),
   ]));

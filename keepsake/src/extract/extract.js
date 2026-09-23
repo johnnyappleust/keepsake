@@ -97,6 +97,52 @@
     else if (typeof value === 'object') imagesFrom(value.url || value.contentUrl || value['@id'], acc);
   }
 
+  // ---- Store's own product type and tags ---------------------------------------
+  // Shopify pages embed the product as JSON ("vendor":"…","type":"Hoodie","tags":[…]);
+  // WooCommerce puts product_cat-<slug> / product_tag-<slug> classes on the product.
+  // These say what the store thinks the item is, so they are strong category clues.
+  const GENERIC_TYPES = /^(product|products|default|simple|variable|grouped|external|variant|item|general|misc|other|all|none|n\/a)$/i;
+  function cleanTags(list) {
+    const out = [];
+    for (const raw of list) {
+      const t = text(raw).replace(/[-_]+/g, ' ');
+      // Skip merchandising and filter tags: "sale", "new", "size:M", "YGroup_x", ids.
+      if (!t || t.length > 30 || /[:=\d]/.test(t) || /^(sale|new|new ?arrivals?|bestsellers?|best sellers?|featured|clearance|gift card|exclusive|limited|online only|hidden|default)$/i.test(t)) continue;
+      if (/\b(feed|feeds|bundle|bundles|guide|module|slider|eligible|bfcm|black friday|cyber monday|aftership|storelocator|include|exclude|badge|promo|discount|filter|template|hide|hidden|campaign)\b/i.test(t)) continue;
+      if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
+      if (out.length >= 12) break;
+    }
+    return out;
+  }
+  function readStoreTaxonomy() {
+    const out = { productType: '', tags: [] };
+    const isShopify = !!document.querySelector('meta[name="shopify-digital-wallet"], meta[name="shopify-checkout-api-token"], script[src*="cdn.shopify.com"], link[href*="cdn.shopify.com"], script[src*="/cdn/shop/"], link[href*="/cdn/shop/"]');
+    if (isShopify) {
+      const unq = (v) => safe(() => JSON.parse(`"${v}"`), v);
+      const scripts = Array.from(document.querySelectorAll('script:not([src])')).slice(0, 120);
+      for (const s of scripts) {
+        const raw = s.textContent || '';
+        if (raw.length > 800000 || !raw.includes('"vendor"')) continue;
+        const m = raw.match(/"vendor":"(?:[^"\\]|\\.)*","type":"((?:[^"\\]|\\.){1,80})"(?:,"tags":\[((?:"(?:[^"\\]|\\.)*",?){0,60})\])?/);
+        if (!m) continue;
+        const type = text(unq(m[1]));
+        if (!out.productType && type && !GENERIC_TYPES.test(type)) out.productType = type;
+        if (!out.tags.length && m[2]) out.tags = cleanTags([...m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((x) => unq(x[1])));
+        if (out.productType && out.tags.length) break;
+      }
+    }
+    if (!out.productType) {
+      const woo = document.querySelector('.type-product[class*="product_cat-"]');
+      if (woo) {
+        const slugs = (prefix) => Array.from(woo.classList).filter((c) => c.startsWith(prefix)).map((c) => c.slice(prefix.length));
+        const cats = slugs('product_cat-').filter((c) => c !== 'uncategorized').map((c) => c.replace(/-/g, ' '));
+        out.productType = cats.slice(0, 3).join(', ');
+        if (!out.tags.length) out.tags = cleanTags(slugs('product_tag-'));
+      }
+    }
+    return out;
+  }
+
   // ---- 5. Visible page heuristics ----------------------------------------------
   function isVisible(el) {
     const r = el.getBoundingClientRect();
@@ -230,7 +276,7 @@
     const h = hints || safe(() => globalThis.__keepsakeHints) || {};
     const result = {
       title: '', description: '', image: '', images: [], imageAlt: '', price: null, currency: '', priceText: '',
-      retailer: '', siteName: '', brand: '', schemaCategory: '', breadcrumbs: [], availability: '',
+      retailer: '', siteName: '', brand: '', schemaCategory: '', productType: '', tags: [], breadcrumbs: [], availability: '',
       url: location.href, canonicalUrl: '', host: location.hostname.replace(/^www\./, ''), source: 'fallback', signals: [], imageAspect: null,
       isInstagram: /(^|\.)instagram\.com$/.test(location.hostname), sparse: false,
     };
@@ -287,7 +333,10 @@
       }
     }
     if (!result.brand) result.brand = meta('meta[property="product:brand"], meta[property="og:brand"]');
-    if (!result.schemaCategory) result.schemaCategory = meta('meta[property="product:category"]');
+    if (!result.schemaCategory) result.schemaCategory = meta('meta[property="product:category"]') || safe(() => text(document.querySelector('[itemprop="category"]')?.getAttribute('content') || ''), '');
+    const store = safe(readStoreTaxonomy, { productType: '', tags: [] });
+    result.productType = store.productType.slice(0, 80);
+    result.tags = store.tags;
 
     const heading = safe(visibleHeading, '');
     if (!result.title || result.title.length < 3) {

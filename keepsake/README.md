@@ -58,13 +58,15 @@ Click the puzzle-piece icon in Chrome's toolbar and press the pin next to **Keep
 
 ## Saving from the toolbar
 
-Open any product page and click the Keepsake icon (or press Alt+Shift+K). The popup:
+Open any product page and click the Keepsake icon (or press Alt+Shift+K). If the local categorizer is at least **75% sure** of the collection (or Optional AI is on), the item is **saved straight away**: the popup shows *Saved to …* with **Undo**, a **Move to** menu, and **Open in dashboard**, which opens that collection (or Review). Undo brings up the full preview below so you can adjust and save by hand.
+
+Otherwise — or when the page is already saved — the popup shows a preview:
 
 1. Shows a skeleton while it reads the page, then the detected **image, title, price, retailer and URL**. Up to six image candidates are offered; click one to use it as the cover.
 2. Picks a **collection** and shows a confidence pill (High / Good / Low / Needs sorting) and a one-line reason ("*tent* in title", "you usually file items from this shop here"). Change the collection from the dropdown, pick "＋ New collection…" to create one inline, or leave it uncategorized for Review.
 3. Lets you edit the title and price and add a note.
 4. Detects if the page is already saved (tracking parameters ignored) and offers **Update existing item** or **Save another copy**.
-5. Confirms with **Undo**, **Open in dashboard** and — when you overrode the suggestion — a checkbox "Use this choice for similar items" that teaches the categorizer strongly.
+5. Confirms with **Undo**, **Open in dashboard** (opens the collection the item went into) and — when you overrode the suggestion — a checkbox "Use this choice for similar items" that teaches the categorizer strongly.
 
 On pages Keepsake cannot read (browser pages, the Web Store, local files) it says so and offers the dashboard instead. On pages with no product data it still lets you save the page; the item is left uncategorized and flagged for Review.
 
@@ -80,8 +82,8 @@ Dashboard → **Settings → On-page save buttons**. Three modes:
 
 When enabled, a small **Save** button appears next to product cards on listing pages and next to the main image on product pages. It lives in a closed Shadow DOM, is positioned over the page (never inserted into its layout), avoids logos, avatars, banners, navigation and ads, works with keyboard focus (Tab to a card, Alt+Shift+S) and respects `prefers-reduced-motion`.
 
-- Saving from a card reads **only that card's** title, price, link and image, then shows a toast with **Undo** and **Edit**.
-- Options: button size (small/medium/large), position within the card, **Ask before saving** (shows a collection picker), **Auto-file confident saves**, **Leave uncertain saves for Review**.
+- Saving from a card reads **only that card's** title, price, link and image and saves it straight away, following the same rule as the toolbar icon: at **75%** confidence or more it's filed into that collection (toast with **Undo** and **Edit**); below that it goes to Review and the toast offers the best guess in a **Move to** menu. The right-click *Save to Keepsake* item works the same way. With Optional AI on, the AI picks the collection instead.
+- Options: button size (small/medium/large) and position within the card. The site list shows only for *Only on sites I choose*; *Hidden on these sites* shows for *On all sites* (and for *Only on sites I choose* only while it still lists a site).
 - Hide the button on specific sites (e.g. news sites) without revoking access, or **Revoke all site access** in one click. Switching away from "all sites" gives the broad permission back to Chrome automatically.
 
 ## Right-click save
@@ -93,11 +95,12 @@ Right-click a page, product image, link or selected text → **Save to Keepsake*
 Categorization runs **entirely locally** (`src/shared/categorizer.js`, deterministic, no network). For each save it scores every collection from:
 
 - the product's title, description, structured category, breadcrumbs, image alt text, card text and — for Instagram — the Saved-collection name and caption;
+- the **store's own product type and tags** when the page publishes them (Shopify's embedded product data, WooCommerce `product_cat-`/`product_tag-` classes). The type counts as much as the title; tags only back up a collection the product already matches elsewhere, because stores use them for merchandising ("Holiday Gift Guide");
 - each collection's built-in vocabulary (strong keywords such as *tent*, *dutch oven*, *headphones* and softer ones such as *ceramic*, *wireless*), the collection's name and aliases, and **your own keywords** (Collection → *Keywords & color*);
 - **your rules** (Settings → Categorization → *Rules*: "for mum, birthday → Gifts");
 - **what it learned** from your corrections: every time you move an item, the salient words of its title get a small weight toward the new collection; "Use this choice for similar items" gives a strong weight. Retailers you file consistently also count.
 
-Longer phrases beat shorter ones ("camp chair" beats "chair"), and a confidence score compares the winner with the runner-up. Below the **threshold** (default 0.6, adjustable) the item is left uncategorized with a suggestion instead of a guess. The **Review** queue shows those, with one-click "Move to …" buttons that teach the categorizer.
+Keywords match their plurals ("hoodie" → "hoodies", "battery" → "batteries"). Longer phrases beat shorter ones ("camp chair" beats "chair"). Usage phrases in descriptions ("at home", "on the job site", "on the go") are ignored, since they say how something is used rather than what it is. Collection names and aliases ("Home", "Body", "Gear") only count when they appear in the title, product type, category, tags or breadcrumbs — not in descriptions — and site-navigation crumbs like "Home" or "Shop all" are ignored. A confidence score compares the winner with the runner-up; a runner-up that only matched description words counts for much less than one that also matched the title, product type, category or breadcrumbs. Below the **threshold** (default 0.6, adjustable) the item is left uncategorized with a suggestion instead of a guess. The **Review** queue shows those, with one-click "Move to …" buttons that teach the categorizer.
 
 Other knobs (Settings → Categorization): auto-create missing default collections (e.g. re-create *Tools* when a drill shows up), and a view of the strongest learned terms and retailer habits with a one-click clear. Similar collection names are never duplicated ("Lamps" and "lamp" are the same collection; "Home Décor" matches "Home Decor"); merging collections carries names over as aliases.
 
@@ -107,7 +110,7 @@ Keepsake starts with three collections — Home Decor, Clothing and Technology �
 
 Open it from the popup, from the extension's Options, or at `#…` routes:
 
-`#all` · `#favorites` · `#review` · `#archive` · `#c/<collection-id>` · `#item/<item-id>` (opens the item) · `#import` · `#settings` · `#ai` · `#privacy` · `#welcome`
+`#all` · `#favorites` · `#review` · `#archive` · `#c/<collection-id>` · `#item/<item-id>` (opens the item) · `#import` · `#settings` · `#ai` · `#ailog` · `#privacy` · `#welcome`
 
 - **Masonry grid** of cards with image (or a text placeholder when there is none), title, price, retailer or Instagram creator, note, favorite star, source badge and "Needs sorting" label. Clicking a card opens a lightweight **Quick view** (image, title, price, a link to the original page); "Edit details" from there or from a card's **⋯** menu opens the full editor.
 - **Search** across titles, retailers, notes, descriptions, prices, captions and creators; **sort** newest/oldest/price; **filter** by retailer; empty states for every view.
@@ -135,9 +138,9 @@ Thumbnails: Instagram image links expire, so Keepsake stores a small local copy 
 
 Limits and honesty: this depends on Instagram's page markup. All selectors live in one file (`src/instagram/adapter.js`) so they can be updated when Instagram changes. Reels and posts are imported; captions come from what Instagram exposes in the grid (alt text), so they can be short. Keepsake does **not** identify products in posts unless you enable the optional AI feature below.
 
-## Optional AI: "Find products in Instagram saves"
+## Optional AI
 
-Off by default, labelled **beta**, and it needs **your own API key**.
+Off by default, and it needs **your own API key**. It's one switch (**Use AI**): when it's on, saves are instant, and *Fix with AI* and *Find products* are available. There are no per-feature toggles.
 
 - Dashboard → **Optional AI**. Choose OpenAI, Anthropic or a custom OpenAI-compatible endpoint, paste your key, optionally set the model. Enabling asks Chrome for permission to contact **only the provider's address**; disabling revokes it.
 - Your key is stored in `chrome.storage.local` under a separate `keepsake_secrets` key that is **never included in exports**. *Remove key* wipes it.
@@ -145,9 +148,10 @@ Off by default, labelled **beta**, and it needs **your own API key**.
 - With **web search** ticked (OpenAI and Anthropic only — custom endpoints have no search tool), the provider runs up to three web searches per post and returns real listings: product name, brand, retailer, price and a link. Each link is checked against the URLs its search actually returned; anything the model made up is **dropped**, and the candidate is shown without a link rather than with a fake one. Every result gets an **Open** and a **Save as product** button, so a found listing becomes a normal Keepsake item with price and URL, linked back to the post.
 - *Identify only* skips the search and just names the likely item, with category, brand and 2–4 **Search the web** phrases you can click yourself.
 - Everything here is labelled as a guess: the model can identify the wrong item, and prices go stale. Check the listing before buying.
-- A second toggle, **Use AI to help categorize uncertain saves**, sends the title/description/retailer of a save plus your collection names when the local categorizer is unsure. Also off by default.
+- **Instant save**: clicking the toolbar icon or an on-page button saves immediately with no preview. The AI tidies the title and picks the collection; if it isn't confident (below your confidence threshold) a confident local pick is used, otherwise the item waits in Review. The popup shows *Saved to …* with Undo and a *Move to* menu; the on-page toast offers Move and Undo. Undo in the popup opens the normal editable preview.
+- **Fix with AI** (Review → *Fix all with AI*, or Optional AI → *Fix with AI* for all items or one collection): reads each item's live product page (optional, without cookies), then tidies titles, updates prices (the model may only choose a number that appears on the page or in the saved data), replaces missing/broken images, and files items into collections. From Review, an item is filed when the AI's confidence meets your threshold; elsewhere an item is only moved at ≥ 85% and never if you filed it yourself. Fixes apply immediately, and every change goes to the **AI change log** (`#ailog`) with per-item and per-run Undo. Dead links, out-of-stock items and unfixable broken images are listed at the end of a run.
 
-Local vs cloud in one sentence: everything in Keepsake — saving, extraction, categorization, dashboard, Instagram import — runs on your machine with no network; the only network call Keepsake ever makes is to the AI provider **you** configured, **when you click** a button that says what it will send.
+Local vs cloud in one sentence: everything in Keepsake — saving, extraction, categorization, dashboard, Instagram import — runs on your machine with no network; the only network calls Keepsake makes are to the AI provider **you** configured (when Optional AI is on: each save, and runs you start) and, for a *Fix with AI* run with live-page reading ticked, to your saved items' own product pages (without cookies).
 
 ## Privacy, export, import, erase
 
@@ -165,11 +169,11 @@ See [PRIVACY.md](PRIVACY.md) and the in-extension **Privacy** page. In short:
 | `storage` | install | Keep your items, collections and settings in `chrome.storage.local`. |
 | `activeTab` + `scripting` | install | When you click the icon, press the shortcut or use the context menu, read *that* page's title/price/images at that moment and show the confirmation toast. Nothing runs on pages otherwise. |
 | `contextMenus` | install | The "Save to Keepsake" right-click item. |
-| Site access (`optional_host_permissions`: `*://*/*`) | **only if you enable on-page buttons** | Run the hover-button script on the sites you granted (per site or all). Revocable in Settings or at `chrome://extensions`. |
+| Site access (`optional_host_permissions`: `*://*/*`) | **only if you enable on-page buttons, or start a *Fix with AI* run with live-page reading** | Run the hover-button script on the sites you granted (per site or all); read saved items' product pages during *Fix with AI*. Revocable in Settings or at `chrome://extensions`. |
 | `https://www.instagram.com/*` | **only if you use "Read post details"** | Read each imported post's own page (caption, creator, links, tagged products) with your existing session. Revocable under Settings → Instagram. |
-| Provider origin (e.g. `https://api.openai.com/*`) | **only if you enable AI** | Let the dashboard call the API you configured. Revoked when you disable AI. |
+| Provider origin (e.g. `https://api.openai.com/*`) | **only if you turn AI on** | Let the dashboard and background worker call the API you configured. Given back when you turn AI off. |
 
-No `tabs`, `history`, `cookies`, `webRequest`, `alarms` or `identity`. The background worker has no timers and no network access of its own.
+No `tabs`, `history`, `cookies`, `webRequest`, `alarms` or `identity`. The background worker has no timers; its only network access is the call to your AI provider on save when Optional AI is on.
 
 ## Limitations
 

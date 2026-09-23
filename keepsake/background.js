@@ -1,14 +1,15 @@
 // Keepsake background service worker (MV3, ES module).
 // It only wakes up for: install/startup, context-menu clicks, messages from
 // the popup/dashboard/content scripts, permission changes and settings changes.
-// It has no timers, no alarms and no network access of its own.
+// It has no timers and no alarms. Its only network access is the optional AI
+// provider call during a save, when the user has turned Optional AI on.
 
 import { createStore, chromeBackend } from './src/shared/storage.js';
-import { classify, learnFromCorrection } from './src/shared/categorizer.js';
+import { classify, learnFromCorrection, AUTO_FILE_CONFIDENCE } from './src/shared/categorizer.js';
 import { parsePrice, sanitizeText } from './src/shared/util.js';
 import { isRestrictedUrl, openableUrl } from './src/shared/url.js';
 import { MSG, SESSION_KEYS } from './src/shared/messages.js';
-import { classifyWithAI } from './src/ai/provider.js';
+import { cleanupWithAI } from './src/ai/provider.js';
 
 const store = createStore(chromeBackend());
 const CONTENT_SCRIPT_ID = 'keepsake-floating';
@@ -48,7 +49,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (card && card.url && card.title) {
       if (info.srcUrl && !card.images.includes(info.srcUrl)) card.images.unshift(info.srcUrl);
       if (info.srcUrl) card.image = info.srcUrl;
-      const res = await saveProduct(card, { source: 'context-menu' });
+      const res = await saveProduct(card, { source: 'context-menu', instant: true });
       await showPageToast(tab.id, res, card);
       return;
     }
@@ -64,7 +65,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       product.price = null;
       product.priceText = '';
     }
-    const res = await saveProduct(product, { source: 'context-menu' });
+    const res = await saveProduct(product, { source: 'context-menu', instant: true });
     await showPageToast(tab.id, res, product);
   } catch (e) {
     await showPageToast(tab.id, { ok: false, error: friendlyError(e) });
@@ -141,7 +142,9 @@ function normalizeProduct(raw) {
   return p;
 }
 
-async function saveProduct(rawProduct, { collectionId = null, force = false, source = 'toolbar', classification: given = null, note = '', learn = 'light' } = {}) {
+// instant: saved with no preview (on-page button, right-click). Then a local pick below
+// AUTO_FILE_CONFIDENCE goes to Review with that pick as the suggestion, like the toolbar.
+async function saveProduct(rawProduct, { collectionId = null, force = false, source = 'toolbar', classification: given = null, note = '', learn = 'light', instant = false } = {}) {
   const product = normalizeProduct(rawProduct);
   if (!force) {
     const existing = await store.findByUrl(product.canonicalUrl || product.url);
@@ -154,20 +157,31 @@ async function saveProduct(rawProduct, { collectionId = null, force = false, sou
   let classification = given || classify(product, { collections, prefs, settings });
   let categorizationSource = 'local';
 
-  // Optional AI assist, only when the user enabled it and provided a key.
-  if (!collectionId && settings.ai?.useForCategorization && (classification.isInbox || classification.confidence < 0.75)) {
+  const threshold = prefs.confidenceThreshold || 0.6;
+
+  // With AI on, saves are instant: the AI tidies the title and picks the collection. Its pick wins
+  // when it is confident; otherwise a confident local pick stands, and anything
+  // else waits in Review. If the call fails, the save goes ahead as it would without AI.
+  if (!collectionId && settings.ai?.on) {
     try {
       const key = await store.getSecret('aiApiKey');
       if (key) {
-        const ai = await classifyWithAI(product, collections, settings, key);
-        if (ai && ai.confidence >= (prefs.confidenceThreshold || 0.6)) {
-          classification = { ...classification, collectionId: ai.collectionId, collectionName: ai.collectionName, confidence: ai.confidence, reason: `AI: ${ai.reason}`, isNew: false, isInbox: false, taxonomyKey: null };
+        const res = await cleanupWithAI([{ ref: 'new', item: product, live: null }], collections, settings, key);
+        const ai = res.get('new');
+        if (ai && ai.title && !product.isInstagram && product.type !== 'instagram') product.title = ai.title;
+        if (ai && ai.collectionId && ai.confidence >= threshold) {
+          classification = { ...classification, collectionId: ai.collectionId, collectionName: ai.collectionName, confidence: ai.confidence, reason: `AI: ${ai.reason || 'best match'}`, isNew: false, isInbox: false, taxonomyKey: null };
           categorizationSource = 'ai';
         }
       }
     } catch {
       /* fall back to the local result */
     }
+  }
+
+  if (instant && !collectionId && categorizationSource === 'local' && !classification.isInbox && classification.confidence < AUTO_FILE_CONFIDENCE) {
+    const pick = { collectionId: classification.collectionId, collectionName: classification.collectionName, taxonomyKey: classification.taxonomyKey, isNew: classification.isNew };
+    classification = { ...classification, collectionId: null, collectionName: 'Review', taxonomyKey: null, isNew: false, isInbox: true, suggested: pick, reason: `Not sure (${Math.round(classification.confidence * 100)}%) — maybe ${pick.collectionName}: ${classification.reason}` };
   }
 
   let targetId = collectionId;
@@ -304,7 +318,8 @@ async function floatingConfig(host) {
   const enabled = f.mode !== 'off' && !hidden.includes(hostLc) && !hidden.includes('www.' + hostLc);
   const collections = (await store.getCollections()).map((c) => ({ id: c.id, name: c.name }));
   const prefs = await store.getPrefs();
-  return { ok: true, enabled, settings: f, collections, threshold: prefs.confidenceThreshold };
+  const instantSave = !!settings.ai?.on && !!(await store.getSecret('aiApiKey'));
+  return { ok: true, enabled, settings: f, collections, threshold: prefs.confidenceThreshold, instantSave };
 }
 
 // --- Instagram scan state ------------------------------------------------------------------------------
@@ -420,7 +435,7 @@ async function handleMessage(msg, sender) {
     }
     case MSG.SAVE_ITEM: {
       if (!msg.product || typeof msg.product !== 'object') throw new Error('Nothing to save.');
-      return saveProduct(msg.product, { collectionId: msg.collectionId || null, force: !!msg.force, source: msg.source || (sender.tab ? 'floating' : 'toolbar'), classification: msg.classification || null, note: msg.note || '', learn: msg.learn === 'strong' ? 'strong' : 'light' });
+      return saveProduct(msg.product, { collectionId: msg.collectionId || null, force: !!msg.force, source: msg.source || (sender.tab ? 'floating' : 'toolbar'), classification: msg.classification || null, note: msg.note || '', learn: msg.learn === 'strong' ? 'strong' : 'light', instant: !!msg.instant });
     }
     case MSG.UPDATE_ITEM: {
       const item = await store.getItem(msg.itemId);

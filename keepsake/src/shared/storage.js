@@ -9,6 +9,8 @@
 //   keepsake_settings      UI + feature settings
 //   keepsake_importHistory { instagram: { [normalizedUrl]: itemId } }
 //   keepsake_secrets       { aiApiKey } — never exported
+//   keepsake_aiLog         [AiChange] — what "Clean up with AI" changed, for undo. Read on
+//                          its own (not part of readAll) and never exported.
 
 import { uid, nowIso, sanitizeText, sanitizeUrl, deepMerge, hostnameOf, prettyRetailer } from './util.js';
 import { normalizeUrl, cleanUrl } from './url.js';
@@ -25,6 +27,8 @@ export const KEYS = {
   importHistory: 'keepsake_importHistory',
   secrets: 'keepsake_secrets',
 };
+const AI_LOG_KEY = 'keepsake_aiLog';
+const AI_LOG_MAX = 3000;
 const EXPORTABLE = [KEYS.meta, KEYS.collections, KEYS.items, KEYS.prefs, KEYS.settings, KEYS.importHistory];
 export const LIMITS = { maxItems: 20000, maxCollections: 500, maxImportBytes: 25 * 1024 * 1024, maxImageBytes: 400 * 1024 };
 
@@ -36,9 +40,6 @@ export const DEFAULT_SETTINGS = {
     hiddenSites: [], // hostnames where buttons are hidden even if permitted
     size: 'medium', // small | medium | large
     position: 'top-right', // top-right | top-left | bottom-right | bottom-left
-    requireConfirm: false,
-    autoSaveHighConfidence: true,
-    uncertainToInbox: true,
   },
   instagram: {
     storeThumbnails: true,
@@ -48,9 +49,10 @@ export const DEFAULT_SETTINGS = {
     readDelayMs: 1500,
   },
   ai: {
-    enabled: false, // "Find products in Instagram saves" (beta)
+    // One switch for everything AI: instant save (the AI tidies the title and picks the
+    // collection at save time), "Fix with AI", and "Find products" for Instagram saves.
+    on: false,
     webLookup: false, // "Find products": also run the provider's web search for listings
-    useForCategorization: false,
     provider: 'openai', // openai | anthropic | custom
     baseUrl: '',
     model: '',
@@ -173,6 +175,9 @@ export function makeItem(input = {}) {
     urlKey: normalizeUrl(canonicalUrl || sourceUrl || url),
     image: sanitizeUrl(input.image, { allowData: true }),
     images: uniqStrings(input.images, 8).map((u) => sanitizeUrl(u, { allowData: true })).filter(Boolean),
+    // The store's own product type and tags, kept so the item can be re-sorted later (Review suggestions).
+    productType: sanitizeText(input.productType, 80),
+    tags: uniqStrings(input.tags, 12).map((t) => sanitizeText(t, 40)).filter(Boolean),
     imageAspect: Number.isFinite(input.imageAspect) && input.imageAspect > 0.2 && input.imageAspect < 5 ? input.imageAspect : null,
     favorite: !!input.favorite,
     archived: !!input.archived,
@@ -298,6 +303,12 @@ export function createStore(backend) {
         }
         if (!raw[KEYS.prefs]) write[KEYS.prefs] = emptyPrefs();
         if (!raw[KEYS.settings]) write[KEYS.settings] = structuredClone(DEFAULT_SETTINGS);
+        else if (raw[KEYS.settings].ai && raw[KEYS.settings].ai.on === undefined) {
+          // Before the single switch, each AI feature had its own. Carry over only the
+          // widest one (instant save); the others agreed to send less, so they start off.
+          const { enabled, useForCategorization, instantSave, ...ai } = raw[KEYS.settings].ai;
+          write[KEYS.settings] = { ...raw[KEYS.settings], ai: { ...ai, on: !!instantSave } };
+        }
         if (!raw[KEYS.items]) write[KEYS.items] = {};
         if (!raw[KEYS.importHistory]) write[KEYS.importHistory] = { instagram: {} };
         await be.set(write);
@@ -544,6 +555,31 @@ export function createStore(backend) {
       });
     },
 
+    // -- AI change log --
+    // Entry: { id, runId, at, itemId, itemTitle, changes: [{ field, before, after }], reason, undone }
+    async getAiLog() {
+      const raw = await be.get(AI_LOG_KEY);
+      return Array.isArray(raw[AI_LOG_KEY]) ? raw[AI_LOG_KEY] : [];
+    },
+    async appendAiLog(entries) {
+      return serial(async () => {
+        const raw = await be.get(AI_LOG_KEY);
+        const log = Array.isArray(raw[AI_LOG_KEY]) ? raw[AI_LOG_KEY] : [];
+        await be.set({ [AI_LOG_KEY]: [...log, ...entries].slice(-AI_LOG_MAX) });
+      });
+    },
+    async markAiLogUndone(ids) {
+      return serial(async () => {
+        const raw = await be.get(AI_LOG_KEY);
+        const set = new Set(ids);
+        const log = (Array.isArray(raw[AI_LOG_KEY]) ? raw[AI_LOG_KEY] : []).map((e) => (set.has(e.id) ? { ...e, undone: true } : e));
+        await be.set({ [AI_LOG_KEY]: log });
+      });
+    },
+    async clearAiLog() {
+      return serial(() => be.remove(AI_LOG_KEY));
+    },
+
     // -- import history (Instagram) --
     async getImportHistory() {
       return (await readAll()).importHistory;
@@ -648,7 +684,7 @@ export function createStore(backend) {
 
     async clearAll() {
       return serial(async () => {
-        await be.remove(Object.values(KEYS));
+        await be.remove([...Object.values(KEYS), AI_LOG_KEY]);
       });
     },
 
