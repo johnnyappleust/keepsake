@@ -312,6 +312,8 @@
     const col = res.collection;
     const cls = res.classification || {};
     const options = collectionOptions();
+    // The save may have created this collection since the options were loaded.
+    if (col && !options.some((o) => o.id === col.id)) options.push({ id: col.id, name: col.name });
     if (cls.isInbox) {
       toast.show({
         title: 'Not sure — saved for review',
@@ -328,32 +330,19 @@
       });
       return;
     }
-    if (item.categorizationSource === 'ai') {
-      // Filed by AI instant save: offer a one-step move in case it picked wrong.
-      toast.show({
-        title: `Saved to ${col ? col.name : 'Keepsake'}`,
-        message: shorten(item.title, 70),
-        picker: { options, selectedId: item.collectionId, label: 'Move to collection' },
-        duration: 10000,
-        actions: [
-          { label: 'Move', onClick: async ({ pickedId }) => {
-            if (!pickedId || pickedId === item.collectionId) return;
-            const up = await send({ type: MSG.UPDATE_ITEM, itemId: item.id, patch: { collectionId: pickedId }, learn: 'light' });
-            toast.show({ title: up && up.ok ? `Moved to ${nameOf(pickedId)}` : 'Couldn’t move', message: up && up.ok ? 'Keepsake will remember this for similar items.' : (up && up.error) || '' });
-          } },
-          { label: 'Undo', quiet: true, onClick: async () => {
-            const r = await send({ type: MSG.UNDO_SAVE, itemId: item.id });
-            toast.show({ title: r && r.ok ? 'Removed' : 'Couldn’t undo', message: r && r.ok ? 'The item was removed from Keepsake.' : (r && r.error) || '', duration: 3000 });
-          } },
-        ],
-      });
-      return;
-    }
+    // Say where it went, with a one-step move in case that's the wrong collection.
     toast.show({
       title: `Saved to ${col ? col.name : 'Keepsake'}`,
       message: shorten(item.title, 70),
+      picker: { options, selectedId: item.collectionId, label: 'Move to collection' },
+      duration: 10000,
       actions: [
-        { label: 'Undo', onClick: async () => {
+        { label: 'Move', onClick: async ({ pickedId }) => {
+          if (!pickedId || pickedId === item.collectionId) return;
+          const up = await send({ type: MSG.UPDATE_ITEM, itemId: item.id, patch: { collectionId: pickedId }, learn: 'light' });
+          toast.show({ title: up && up.ok ? `Moved to ${nameOf(pickedId)}` : 'Couldn’t move', message: up && up.ok ? 'Keepsake will remember this for similar items.' : (up && up.error) || '' });
+        } },
+        { label: 'Undo', quiet: true, onClick: async () => {
           const r = await send({ type: MSG.UNDO_SAVE, itemId: item.id });
           toast.show({ title: r && r.ok ? 'Removed' : 'Couldn’t undo', message: r && r.ok ? 'The item was removed from Keepsake.' : (r && r.error) || '', duration: 3000 });
         } },

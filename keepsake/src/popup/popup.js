@@ -7,7 +7,7 @@ import { createStore, chromeBackend } from '../shared/storage.js';
 import { MSG, SESSION_KEYS } from '../shared/messages.js';
 import { el, clear, parsePrice, sanitizeText, pluralize } from '../shared/util.js';
 import { isRestrictedUrl } from '../shared/url.js';
-import { learnFromCorrection, AUTO_FILE_CONFIDENCE } from '../shared/categorizer.js';
+import { learnFromCorrection, nearMatchCollection, AUTO_FILE_CONFIDENCE } from '../shared/categorizer.js';
 
 const store = createStore(chromeBackend());
 const $ = (id) => document.getElementById(id);
@@ -42,6 +42,9 @@ const STATES = ['state-loading', 'state-restricted', 'state-instagram', 'state-p
 function show(id) {
   for (const s of STATES) $(s).classList.toggle('hidden', s !== id);
   $('state-loading').setAttribute('aria-busy', id === 'state-loading' ? 'true' : 'false');
+  // The title box can only be measured once its section is visible; sized while
+  // hidden it collapsed to 2px.
+  if (id === 'state-product') autosize($('titleInput'));
 }
 
 function openDashboard(hash = '') {
@@ -233,10 +236,12 @@ function renderProduct() {
   $('dupUpdate').addEventListener('click', () => updateExisting());
   $('newCollectionCancel').addEventListener('click', () => {
     $('newCollectionRow').classList.add('hidden');
+    $('nearMatchRow').classList.add('hidden');
     $('collectionSelect').value = state.classification.isNew ? `new:${state.classification.taxonomyKey}` : state.classification.collectionId || '';
     state.userOverride = false;
     updateConfidencePill();
   });
+  $('newCollectionInput').addEventListener('input', () => $('nearMatchRow').classList.add('hidden'));
   $('newCollectionInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -369,6 +374,13 @@ async function resolveCollectionChoice() {
       $('newCollectionInput').focus();
       throw new Error('Give the new collection a name.');
     }
+    // A name close to an existing collection ("Food" vs Kitchen, which covers food):
+    // ask which one was meant instead of quietly using the existing one.
+    const near = state.confirmedNewName === name ? null : nearMatchCollection(name, state.collections);
+    if (near) {
+      askNearMatch(name, near);
+      throw ASKED;
+    }
     const { collection, existed } = await store.createCollection({ name });
     if (existed) {
       state.collections = await store.getCollections();
@@ -379,6 +391,36 @@ async function resolveCollectionChoice() {
     return collection.id;
   }
   return sel.value;
+}
+
+// Thrown to stop a save while the near-match question is showing; not an error.
+const ASKED = new Error('asked');
+
+function askNearMatch(name, near) {
+  const other = near.collection.name;
+  $('nearMatchText').textContent = near.matched
+    ? `You already have “${other}”, which also covers “${near.matched}”.`
+    : `You already have a collection with a similar name, “${other}”.`;
+  const create = $('nearMatchCreate');
+  const use = $('nearMatchUse');
+  create.textContent = `Create “${cut(name, 24)}”`;
+  use.textContent = `Use “${cut(other, 24)}”`;
+  const retry = state.retry;
+  create.onclick = () => {
+    state.confirmedNewName = name;
+    $('nearMatchRow').classList.add('hidden');
+    if (retry) retry();
+  };
+  use.onclick = () => {
+    $('collectionSelect').value = near.collection.id;
+    $('newCollectionRow').classList.add('hidden');
+    $('nearMatchRow').classList.add('hidden');
+    state.userOverride = near.collection.id !== state.classification.collectionId;
+    updateConfidencePill();
+    if (retry) retry();
+  };
+  $('nearMatchRow').classList.remove('hidden');
+  create.focus();
 }
 
 function setBusy(busy) {
@@ -393,6 +435,7 @@ async function save({ force }) {
   const err = $('saveError');
   err.classList.add('hidden');
   setBusy(true);
+  state.retry = () => save({ force });
   try {
     const chosen = await resolveCollectionChoice();
     const product = collectEdits();
@@ -411,8 +454,12 @@ async function save({ force }) {
     }
     state.savedItem = res.item;
     state.savedMode = 'saved';
+    // The save may have created a collection (typed in, or a default one on demand);
+    // reload so the "Move to" menu lists it and shows it selected.
+    if (res.collection && !state.collections.some((c) => c.id === res.collection.id)) state.collections = await store.getCollections();
     showSaved(res.item, res.collection);
   } catch (e) {
+    if (e === ASKED) return;
     err.textContent = String((e && e.message) || e);
     err.classList.remove('hidden');
   } finally {
@@ -424,6 +471,7 @@ async function updateExisting() {
   const err = $('saveError');
   err.classList.add('hidden');
   setBusy(true);
+  state.retry = () => updateExisting();
   try {
     const chosen = await resolveCollectionChoice();
     const product = collectEdits();
@@ -438,6 +486,7 @@ async function updateExisting() {
     const col = state.collections.find((c) => c.id === res.item.collectionId);
     showSaved(res.item, col);
   } catch (e) {
+    if (e === ASKED) return;
     err.textContent = String((e && e.message) || e);
     err.classList.remove('hidden');
   } finally {
@@ -489,11 +538,11 @@ function showSaved(item, collection) {
   setTimeout(() => $('savedOpen').focus(), 30);
 }
 
-// After an instant save: one-step "Move to" in case the AI picked the wrong collection.
+// After every save: a one-step "Move to", so a wrong collection is easy to spot and fix.
 function renderSavedMove(item) {
   const row = $('savedMoveRow');
-  row.classList.toggle('hidden', !(state.instant && state.savedMode === 'saved'));
-  if (!state.instant) return;
+  row.classList.toggle('hidden', state.savedMode !== 'saved');
+  if (state.savedMode !== 'saved') return;
   const sel = $('savedMove');
   clear(sel);
   if (!item.collectionId) sel.append(el('option', { value: '', text: 'Review (not sorted)' }));

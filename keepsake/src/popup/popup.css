@@ -386,6 +386,10 @@ body {
   color: var(--brass-2);
 }
 
+.near-match {
+  margin-top: 8px;
+}
+
 .dup-actions {
   display: flex;
   gap: 6px;

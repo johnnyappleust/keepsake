@@ -178,13 +178,14 @@
     wrap.append(toast);
     current = toast;
     requestAnimationFrame(() => toast.classList.add('in'));
-    const duration = Number.isFinite(opts.duration) ? opts.duration : 6500;
+    // Every toast stays up 25% longer than the duration it asks for.
+    const duration = (Number.isFinite(opts.duration) ? opts.duration : 6500) * 1.25;
     if (duration > 0) {
       hideTimer = setTimeout(hide, duration);
       toast.addEventListener('mouseenter', () => clearTimeout(hideTimer));
       toast.addEventListener('mouseleave', () => {
         clearTimeout(hideTimer);
-        hideTimer = setTimeout(hide, 2500);
+        hideTimer = setTimeout(hide, 2500 * 1.25);
       });
     }
     if (opts.focus && pickerEl) pickerEl.focus();

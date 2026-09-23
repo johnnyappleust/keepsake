@@ -2,7 +2,7 @@
 
 import { LIMITS } from '../shared/storage.js';
 import { MSG } from '../shared/messages.js';
-import { el, clear, sanitizeText, pluralize } from '../shared/util.js';
+import { el, clear, pluralize } from '../shared/util.js';
 import { originPattern, hostFromPattern } from '../shared/url.js';
 import { emptyPrefs } from '../shared/categorizer.js';
 import { PROVIDERS, providerConfig, originFor, describePayload, analyzePost, testConnection, findProductOnline, supportsWebLookup } from '../ai/provider.js';
@@ -183,7 +183,6 @@ function categorizationSection(ctx) {
   const draw = () => {
     clear(box);
     const prefs = ctx.state.prefs || emptyPrefs();
-    const cols = ctx.regularCollections();
     const threshold = Number(prefs.confidenceThreshold) || 0.6;
     const range = el('input', { type: 'range', min: '0.3', max: '0.9', step: '0.05', 'aria-label': 'Confidence threshold' });
     range.value = String(threshold);
@@ -192,29 +191,6 @@ function categorizationSection(ctx) {
     range.addEventListener('change', () => ctx.store.updatePrefs({ confidenceThreshold: Number(range.value) }));
     box.append(UI.settingRow('Confidence needed to auto-file', el('div', { class: 'slider-row' }, [range, val]), 'Below this, saves are left uncategorized and wait in Review. Higher = more items in Review, fewer mistakes.'));
     box.append(UI.settingRow('Create default collections on demand', UI.switchInput({ checked: prefs.autoCreateCollections !== false, onChange: (v) => ctx.store.updatePrefs({ autoCreateCollections: v }), label: 'Create default collections on demand' }), 'If you deleted a default collection and a matching item shows up later, Keepsake can recreate it instead of leaving the item uncategorized.'));
-
-    // Rules
-    const rules = prefs.rules || [];
-    const table = el('table', { class: 'table' }, [
-      el('thead', {}, [el('tr', {}, [el('th', {}, ['Keywords']), el('th', {}, ['Collection']), el('th', {}, [''])])]),
-      el('tbody', {}, rules.length ? rules.map((r) => el('tr', {}, [
-        el('td', {}, [r.keywords.join(', ')]),
-        el('td', {}, [ctx.collectionById(r.collectionId)?.name || 'Unknown collection']),
-        el('td', {}, [el('button', { type: 'button', class: 'btn btn-sm btn-quiet', onClick: () => ctx.store.updatePrefs({ rules: rules.filter((x) => x.id !== r.id) }) }, ['Remove'])]),
-      ])) : [el('tr', {}, [el('td', { colspan: '3', class: 'help' }, ['No rules yet. Rules beat every other signal.'])])]),
-    ]);
-    const kwInput = el('input', { class: 'input', placeholder: 'keywords, comma separated', 'aria-label': 'Rule keywords' });
-    const colSel = UI.selectInput({ value: cols[0]?.id || '', options: cols.map((c) => ({ value: c.id, label: c.name })), onChange: () => {}, label: 'Rule collection' });
-    const addRule = el('button', { type: 'button', class: 'btn', disabled: !cols.length, onClick: async () => {
-      const keywords = kwInput.value.split(',').map((s) => sanitizeText(s, 40).toLowerCase()).filter(Boolean).slice(0, 20);
-      if (!keywords.length) {
-        kwInput.focus();
-        return;
-      }
-      await ctx.store.updatePrefs({ rules: [...rules, { id: `rule_${Date.now().toString(36)}`, keywords, collectionId: colSel.value }].slice(0, 500) });
-      kwInput.value = '';
-    } }, ['Add rule']);
-    box.append(el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Always file these keywords into…']), el('div', { class: 'table-wrap' }, [table]), el('div', { class: 'inline-form' }, [kwInput, colSel, addRule])]));
 
     // Learned preferences
     const learned = Object.entries(prefs.learnedKeywords || {});
@@ -231,7 +207,7 @@ function categorizationSection(ctx) {
       top.length ? el('div', { class: 'chips' }, top.map((x) => el('span', { class: 'chip', title: `weight ${x.w}` }, [`${x.term} → ${ctx.collectionById(x.cid)?.name || '?'}`]))) : el('p', { class: 'help' }, ['Nothing learned yet. Move an item between collections and Keepsake will pick up the pattern.']),
       retailers.length ? el('p', { class: 'help' }, ['Retailer habits: ' + retailers.map((x) => `${x.host} → ${ctx.collectionById(x.cid)?.name || '?'}`).join(' · ')]) : null,
       el('div', { class: 'actions-row' }, [el('button', { type: 'button', class: 'btn btn-sm', disabled: !learned.length && !retailers.length, onClick: async () => {
-        const ok = await UI.confirmDialog({ title: 'Clear learned preferences?', message: 'Keepsake forgets every keyword and retailer habit it picked up from your moves. Your rules and collections are kept.', confirmLabel: 'Clear', danger: true });
+        const ok = await UI.confirmDialog({ title: 'Clear learned preferences?', message: 'Keepsake forgets every word and retailer habit it picked up from your moves. Your collections and their keywords are kept.', confirmLabel: 'Clear', danger: true });
         if (ok) await ctx.store.updatePrefs({ learnedKeywords: {}, retailerPrefs: {}, corrections: [] });
       } }, ['Clear learned preferences'])]),
     ]);
@@ -239,7 +215,7 @@ function categorizationSection(ctx) {
     box.append(el('p', { class: 'help' }, [`${ctx.state.items.filter((i) => i.needsReview && !i.archived).length} low-confidence saves waiting in the `, el('a', { href: '#review' }, ['review queue']), '.']));
   };
   draw();
-  return UI.section('Categorization', 'How Keepsake decides where a save goes: your rules first, then collection names and keywords, then what it learned from your corrections. All of it runs locally.', [box]);
+  return UI.section('Categorization', 'How Keepsake decides where a save goes: your collections’ keywords first, then collection names and built-in category words, then what it learned from your moves. All of it runs locally. Add keywords from a collection’s page.', [box]);
 }
 
 function collectionsSection(ctx) {
@@ -251,9 +227,9 @@ function collectionsSection(ctx) {
     el('td', {}, [String(counts.get(c.id) || 0)]),
     el('td', {}, [(c.keywords || []).slice(0, 5).join(', ') || el('span', { class: 'muted' }, ['—'])]),
   ]));
-  return UI.section('Collections', `${pluralize(cols.length, 'collection', 'collections')}. Rename, merge, edit keywords or delete a collection from its page.`, [
+  return UI.section('Collections', `${pluralize(cols.length, 'collection', 'collections')}. Rename a collection, edit its keywords or delete it from its page.`, [
     el('div', { class: 'table-wrap' }, [el('table', { class: 'table' }, [el('thead', {}, [el('tr', {}, [el('th', {}, ['Name']), el('th', {}, ['Items']), el('th', {}, ['Your keywords'])])]), el('tbody', {}, rows)])]),
-    el('p', { class: 'help' }, [`${pluralize(counts.get(null) || 0, 'item', 'items')} uncategorized, waiting in Review. Collections with similar names are merged automatically when created.`]),
+    el('p', { class: 'help' }, [`${pluralize(counts.get(null) || 0, 'item', 'items')} uncategorized, waiting in Review. When a new collection’s name is close to an existing one, Keepsake asks which you meant.`]),
   ]);
 }
 
@@ -619,7 +595,7 @@ export function renderPrivacy(ctx, view) {
   ]));
   page.append(UI.section('What is stored', '', [
     el('div', { class: 'prose' }, [
-      el('p', {}, ['For each save: title, price, retailer, page URL, image URL (or, for Instagram imports, a small stored thumbnail), your note, flags such as favorite/purchased, which collection it is in and why, and the store’s product type and tags when the page publishes them. For categorization: your rules, and keyword/retailer weights learned from moves. For Instagram: which post URLs were already imported. Optional AI: your API key and provider settings, and a log of what “Fix with AI” changed so it can be undone.']),
+      el('p', {}, ['For each save: title, price, retailer, page URL, image URL (or, for Instagram imports, a small stored thumbnail), your note, flags such as favorite/purchased, which collection it is in and why, and the store’s product type and tags when the page publishes them. For categorization: your collections’ keywords, and word/retailer weights learned from moves. For Instagram: which post URLs were already imported. Optional AI: your API key and provider settings, and a log of what “Fix with AI” changed so it can be undone.']),
       el('p', {}, ['Keepsake does not store browsing history, page contents beyond the fields above, or anything from pages you did not save from.']),
     ]),
   ]));

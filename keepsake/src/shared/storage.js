@@ -5,7 +5,7 @@
 //   keepsake_meta          { schemaVersion, installedAt, updatedAt }
 //   keepsake_collections   { [id]: Collection }
 //   keepsake_items         { [id]: Item }
-//   keepsake_prefs         categorization preferences (rules, learned keywords…)
+//   keepsake_prefs         categorization preferences (threshold, learned keywords…)
 //   keepsake_settings      UI + feature settings
 //   keepsake_importHistory { instagram: { [normalizedUrl]: itemId } }
 //   keepsake_secrets       { aiApiKey } — never exported
@@ -15,9 +15,9 @@
 import { uid, nowIso, sanitizeText, sanitizeUrl, deepMerge, hostnameOf, prettyRetailer } from './util.js';
 import { normalizeUrl, cleanUrl } from './url.js';
 import { DEFAULT_TAXONOMY } from './taxonomy.js';
-import { emptyPrefs, findSimilarCollection, learnFromCorrection, forgetCollection } from './categorizer.js';
+import { emptyPrefs, findSimilarCollection, normalizeName, learnFromCorrection, forgetCollection } from './categorizer.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const KEYS = {
   meta: 'keepsake_meta',
   collections: 'keepsake_collections',
@@ -116,7 +116,35 @@ export function chromeBackend() {
 const MIGRATIONS = {
   // 0 -> 1: initial schema. Nothing stored before v1 (kept as the pattern for later).
   0: (data) => data,
+  // 1 -> 2: "rules" (Settings) and collection keywords were the same idea. Each rule's
+  // keywords move onto its collection, and rules are gone.
+  1: (data) => {
+    const prefs = data[KEYS.prefs];
+    if (!prefs || !Array.isArray(prefs.rules)) return data;
+    const { rules, ...rest } = prefs;
+    return { ...data, [KEYS.collections]: foldRulesIntoKeywords(data[KEYS.collections] || {}, rules), [KEYS.prefs]: rest };
+  },
 };
+
+// Adds each rule's keywords to its collection's keywords. Returns new collections.
+function foldRulesIntoKeywords(collections, rules) {
+  const out = { ...collections };
+  for (const r of rules || []) {
+    const col = r && out[r.collectionId];
+    if (!col || !Array.isArray(r.keywords)) continue;
+    out[r.collectionId] = { ...col, keywords: uniqStrings([...(col.keywords || []), ...r.keywords.map((k) => String(k).toLowerCase())], 40) };
+  }
+  return out;
+}
+
+// A collection nobody picked a color for gets the least-used one, so empty
+// collections' placeholder tiles don't all look alike.
+export const COLLECTION_COLORS = ['#8A9A88', '#5F6F5E', '#B9924F', '#A6503F', '#6B7C9B', '#8C6B8F', '#4F6F57', '#9C7A5B', '#6A6A6A', '#C97B4A'];
+function nextColor(collections) {
+  const used = new Map(COLLECTION_COLORS.map((c) => [c.toLowerCase(), 0]));
+  for (const c of collections) if (used.has(String(c.color).toLowerCase())) used.set(c.color.toLowerCase(), used.get(c.color.toLowerCase()) + 1);
+  return COLLECTION_COLORS.reduce((best, c) => (used.get(c.toLowerCase()) < used.get(best.toLowerCase()) ? c : best));
+}
 
 export function migrate(data) {
   let version = Number(data[KEYS.meta]?.schemaVersion || 0);
@@ -145,6 +173,7 @@ export function makeCollection(input = {}) {
     aliases: uniqStrings(input.aliases, 20).map((k) => sanitizeText(k, 40)).filter(Boolean),
     taxonomyKey: typeof input.taxonomyKey === 'string' ? input.taxonomyKey : null,
     sortOrder: Number.isFinite(input.sortOrder) ? input.sortOrder : 0,
+    pinned: input.pinned === true,
     createdAt: input.createdAt || now,
     updatedAt: now,
   };
@@ -333,18 +362,21 @@ export function createStore(backend) {
       return collections[id] || null;
     },
 
-    // Creates a collection unless a similar one exists (returns the existing one then).
+    // Creates a collection unless one with the same name exists (returns that one then).
+    // "Same" allows case, plural and "&"/"and" differences, but not related names: a user
+    // who types "Food" gets a Food collection even though Kitchen lists food as an alias.
     async createCollection(input, { allowSimilar = false } = {}) {
       return serial(async () => {
         const { collections } = await readAll();
         const list = Object.values(collections);
         if (list.length >= LIMITS.maxCollections) throw new Error('Collection limit reached');
         if (!allowSimilar) {
-          const similar = findSimilarCollection(input.name, list);
-          if (similar) return { collection: similar, existed: true };
+          const target = normalizeName(input.name);
+          const same = target && list.find((c) => normalizeName(c.name) === target);
+          if (same) return { collection: same, existed: true };
         }
         const maxOrder = list.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
-        const col = makeCollection({ ...input, sortOrder: input.sortOrder ?? maxOrder + 1 });
+        const col = makeCollection({ ...input, color: input.color || nextColor(list), sortOrder: input.sortOrder ?? maxOrder + 1 });
         collections[col.id] = col;
         await be.set({ [KEYS.collections]: collections });
         return { collection: col, existed: false };
@@ -630,9 +662,15 @@ export function createStore(backend) {
         let skippedItems = 0;
         for (const col of Object.values(validated.collections)) {
           const existingById = collections[col.id];
-          const similar = existingById || findSimilarCollection(col.name, Object.values(collections));
+          // Same collection: same id, same name (give or take case and plurals), or the same
+          // default category. Not just a related name, or a backup's Kitchen lands in Food.
+          const existing = Object.values(collections);
+          const similar = existingById
+            || existing.find((c) => normalizeName(c.name) === normalizeName(col.name))
+            || (col.taxonomyKey && existing.find((c) => c.taxonomyKey === col.taxonomyKey));
           if (similar) {
             idMap.set(col.id, similar.id);
+            if (col.keywords.length) collections[similar.id] = { ...similar, keywords: uniqStrings([...(similar.keywords || []), ...col.keywords], 40) };
             continue;
           }
           collections[col.id] = col;
@@ -720,11 +758,6 @@ export function defaultCollections() {
 function mergePrefs(base, incoming, idMap) {
   const out = { ...emptyPrefs(), ...base };
   const map = (id) => idMap.get(id) || id;
-  out.rules = [...(out.rules || [])];
-  for (const r of incoming.rules || []) {
-    const mapped = { ...r, collectionId: map(r.collectionId) };
-    if (!out.rules.some((x) => x.id === mapped.id)) out.rules.push(mapped);
-  }
   out.learnedKeywords = { ...(out.learnedKeywords || {}) };
   for (const [term, entry] of Object.entries(incoming.learnedKeywords || {})) {
     const e = { ...(out.learnedKeywords[term] || {}) };
@@ -772,10 +805,12 @@ export function validateExport(payload) {
   let prefs = null;
   if (payload.prefs && typeof payload.prefs === 'object') {
     const p = payload.prefs;
+    // Older exports (schema 1) have rules; they become their collections' keywords.
+    const rules = (Array.isArray(p.rules) ? p.rules : []).slice(0, 500).filter((r) => r && typeof r === 'object' && typeof r.collectionId === 'string').map((r) => ({
+      collectionId: safeId(r.collectionId), keywords: uniqStrings(r.keywords, 20).map((k) => sanitizeText(k, 40).toLowerCase()).filter(Boolean),
+    }));
+    Object.assign(collections, foldRulesIntoKeywords(collections, rules));
     prefs = {
-      rules: (Array.isArray(p.rules) ? p.rules : []).slice(0, 500).filter((r) => r && typeof r === 'object' && typeof r.collectionId === 'string').map((r) => ({
-        id: safeId(r.id), collectionId: r.collectionId, keywords: uniqStrings(r.keywords, 20).map((k) => sanitizeText(k, 40).toLowerCase()),
-      })),
       learnedKeywords: {},
       retailerPrefs: {},
       corrections: (Array.isArray(p.corrections) ? p.corrections : []).slice(-200).filter((c) => c && typeof c === 'object'),

@@ -41,11 +41,11 @@ const FIELD_WEIGHTS = {
 export const AUTO_FILE_CONFIDENCE = 0.75;
 
 const IDENTITY_FIELDS = new Set(['title', 'productType', 'schemaCategory', 'breadcrumbs', 'instagramCollection']);
-const IDENTITY_KINDS = new Set(['rule', 'user', 'learned']);
+const IDENTITY_KINDS = new Set(['user', 'learned']);
 const NAME_FIELDS = new Set(['title', 'productType', 'schemaCategory', 'breadcrumbs', 'instagramCollection', 'tags']);
 // Site-navigation crumbs that say nothing about the product ("Home > Bedding > Sheets").
 const ROOT_CRUMBS = /^(home|homepage|home page|shop|shop all|store|all|all products|products|catalog|catalogue|collections|new|sale|en|us|en-us)$/i;
-const KW_WEIGHT = { strong: 3, regular: 1, user: 3, rule: 5, name: 3 };
+const KW_WEIGHT = { strong: 3, regular: 1, user: 5, name: 3 };
 const MAX_LEARNED_WEIGHT = 6;
 
 // --- text helpers ------------------------------------------------------------
@@ -146,7 +146,7 @@ export function findSimilarCollection(name, collections, threshold = 0.8) {
   let bestScore = 0;
   for (const c of collections) {
     const candidates = [c.name, ...(c.aliases || [])];
-    const tax = resolveTaxonomy(c);
+    const tax = taxonomyFor(c, collections);
     if (tax) candidates.push(tax.name, ...(tax.aliases || []));
     for (const cand of candidates) {
       const score = normalizeName(cand) === target ? 1 : nameSimilarity(cand, name);
@@ -157,6 +157,35 @@ export function findSimilarCollection(name, collections, threshold = 0.8) {
     }
   }
   return bestScore >= threshold ? best : null;
+}
+
+// For a name the user typed for a new collection: an existing collection it would
+// probably duplicate without being the same name ("Food" vs Kitchen, which covers
+// food), and which of that collection's names matched. null when there's none, or
+// when a collection already has exactly that name.
+export function nearMatchCollection(name, collections) {
+  const target = normalizeName(name);
+  if (!target || collections.some((c) => normalizeName(c.name) === target)) return null;
+  // The user's own keywords say most clearly what a collection covers.
+  for (const c of collections) {
+    const kw = (c.keywords || []).find((k) => normalizeName(k) === target);
+    if (kw) return { collection: c, matched: kw };
+  }
+  const collection = findSimilarCollection(name, collections);
+  if (!collection) return null;
+  const tax = taxonomyFor(collection, collections);
+  const names = [...(collection.aliases || []), ...(tax ? [tax.name, ...(tax.aliases || [])] : [])];
+  const matched = names.find((n) => normalizeName(n) === target) || '';
+  return { collection, matched };
+}
+
+// The default category a collection stands for, among `collections`. A collection only
+// borrows one by name when no other collection is that category outright: with Kitchen
+// present, a "Food" collection doesn't take on Kitchen's words (food is one of them).
+export function taxonomyFor(collection, collections) {
+  const tax = resolveTaxonomy(collection);
+  if (!tax || collection.taxonomyKey) return tax;
+  return collections.some((o) => o.id !== collection.id && o.taxonomyKey === tax.key) ? null : tax;
 }
 
 // Map a user collection onto a default taxonomy entry so it inherits keywords.
@@ -252,8 +281,10 @@ export function salientTerms(product, max = 12) {
 function buildCandidates(collections, prefs, settings) {
   const candidates = [];
   const covered = new Set();
+  // An alias gives way to a collection with that name: "food" means Food, not Kitchen.
+  const ownNames = new Map(collections.map((c) => [normalizeName(c.name), c.id]));
   for (const c of collections) {
-    const tax = resolveTaxonomy(c);
+    const tax = taxonomyFor(c, collections);
     if (tax) covered.add(tax.key);
     candidates.push({
       id: c.id,
@@ -263,7 +294,7 @@ function buildCandidates(collections, prefs, settings) {
       strong: tax ? tax.strong : [],
       regular: tax ? tax.keywords : [],
       user: c.keywords || [],
-      nameTokens: [c.name, ...(c.aliases || [])].map(normalizeName).filter(Boolean),
+      nameTokens: [c.name, ...(c.aliases || [])].map(normalizeName).filter((t) => t && (!ownNames.has(t) || ownNames.get(t) === c.id)),
     });
   }
   const autoCreate = settings?.autoCreateCollections !== false && prefs?.autoCreateCollections !== false;
@@ -326,19 +357,6 @@ function collectMatches(candidate, candidateIndex, fields, prefs) {
       }
     }
   }
-  // Explicit user rules
-  for (const rule of prefs?.rules || []) {
-    if (!rule || rule.collectionId !== candidate.id) continue;
-    for (const kw of rule.keywords || []) {
-      for (const field of ['title', 'description', 'cardText', 'caption', 'breadcrumbs', 'instagramCollection', 'alt']) {
-        const m = matchKeyword(kw, fields[field]);
-        if (m) {
-          add(field, kw, m, KW_WEIGHT.rule, 'rule');
-          break;
-        }
-      }
-    }
-  }
   return matches;
 }
 
@@ -346,11 +364,14 @@ function collectMatches(candidate, candidateIndex, fields, prefs) {
 function applyDominance(matches) {
   const dominable = new Set(['strong', 'regular', 'name']);
   return matches.filter((m) => {
-    if (!dominable.has(m.kind)) return true; // user words and learned terms always count
+    if (m.kind === 'learned') return true;
     for (const n of matches) {
       if (n === m || n.field !== m.field) continue;
       if (n.matched.length <= m.matched.length) continue;
       if (n.candidateIndex === m.candidateIndex && n.kind === m.kind) continue;
+      // Built-in words give way to any longer match. The user's own keywords only give
+      // way to a longer keyword of theirs: "coffee cup" (Kitchen) beats "coffee" (Food).
+      if (!dominable.has(m.kind) && n.kind !== 'user') continue;
       if (matchKeyword(m.matched, n.matched)) return false;
     }
     return true;
@@ -390,6 +411,8 @@ export function classify(product, context = {}) {
   // Whether a candidate has evidence about what the product *is*: a match in the
   // title, the store's type/category/breadcrumbs, or the user's own words and history.
   const identified = candidates.map(() => false);
+  // Points from the user's own keywords, kept apart to spot a tie between two of them.
+  const userScores = candidates.map(() => 0);
   const seen = new Set();
   const tally = (m) => {
     const key = `${m.candidateIndex}|${m.field}|${m.keyword}`;
@@ -397,9 +420,13 @@ export function classify(product, context = {}) {
     seen.add(key);
     const fw = FIELD_WEIGHTS[m.field] || 1;
     scores[m.candidateIndex] += fw * m.weight;
+    if (m.kind === 'user') userScores[m.candidateIndex] += fw * m.weight;
     if (IDENTITY_FIELDS.has(m.field) || IDENTITY_KINDS.has(m.kind)) identified[m.candidateIndex] = true;
     if (explain[m.candidateIndex].length < 4) explain[m.candidateIndex].push(m);
   };
+  // The user's keyword goes first, so it's the one counted when a built-in word is the
+  // same ("coffee" is both Kitchen's and the user's): tally() counts a word once.
+  all.sort((a, b) => (b.kind === 'user') - (a.kind === 'user'));
   for (const m of all) if (m.field !== 'tags') tally(m);
   // Store tags are often merchandising ("Holiday Gift Guide", "Bundle"), so they
   // only back up a category the product is already identified with.
@@ -420,7 +447,7 @@ export function classify(product, context = {}) {
   }
 
   const ranked = candidates
-    .map((cand, i) => ({ cand, score: scores[i], why: explain[i], identified: identified[i] }))
+    .map((cand, i) => ({ cand, score: scores[i], why: explain[i], identified: identified[i], userScore: userScores[i] }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score || (a.cand.virtual === b.cand.virtual ? 0 : a.cand.virtual ? 1 : -1));
 
@@ -436,6 +463,19 @@ export function classify(product, context = {}) {
   }
 
   const top = ranked[0];
+  const userWords = (r) => [...new Set(r.why.filter((w) => w.kind === 'user').map((w) => `“${w.keyword}”`))].join(', ');
+  // Two of the user's keywords, for different collections, matched equally well (the
+  // same keyword on both, say). Their words don't settle it, so ask rather than guess.
+  const keyed = ranked.filter((r) => r.userScore > 0).sort((a, b) => b.userScore - a.userScore);
+  if (keyed.length > 1 && keyed[0].userScore === keyed[1].userScore) {
+    const [a, b] = keyed;
+    const suggest = (r) => alternatives.find((x) => x.collectionId === r.cand.id) || { collectionId: r.cand.id, collectionName: r.cand.name, taxonomyKey: r.cand.taxonomyKey, score: r.score, isNew: false };
+    return finish({
+      collectionId: null, collectionName: 'Review', taxonomyKey: null, confidence: 0.5,
+      reason: `Your keywords match both “${a.cand.name}” (${userWords(a)}) and “${b.cand.name}” (${userWords(b)})`,
+      isNew: false, isInbox: true, alternatives: [suggest(a), suggest(b), ...alternatives.filter((x) => x.collectionId !== a.cand.id && x.collectionId !== b.cand.id)].slice(0, 4), suggested: suggest(a),
+    });
+  }
   // A runner-up only drags confidence down fully when it also has identity
   // evidence. Words that merely show up in a description ("wrench", "print")
   // count for much less when the winner is clearly named in the title or type.
@@ -444,9 +484,8 @@ export function classify(product, context = {}) {
   confidence = Math.max(0, Math.min(0.98, confidence));
   // A single low-weight regular keyword should never look confident.
   if (top.score < 3) confidence = Math.min(confidence, 0.35);
-  // Explicit user rules and per-collection keywords are the user's own words:
-  // when one matched the winner, trust it.
-  if (top.why.some((w) => w.kind === 'rule' || w.kind === 'user')) confidence = Math.max(confidence, 0.85);
+  // A collection's keywords are the user's own words: when one matched the winner, trust it.
+  if (top.userScore > 0) confidence = Math.max(confidence, 0.85);
 
   const reason = describeWhy(top.why);
   if (confidence < threshold) {
@@ -479,7 +518,7 @@ function describeWhy(why) {
     }
     const label = { title: 'title', description: 'description', schemaCategory: 'category', productType: 'the store’s product type', tags: 'tags', breadcrumbs: 'breadcrumbs', alt: 'image text', cardText: 'card text', caption: 'caption', instagramCollection: 'Instagram collection' }[w.field] || w.field;
     if (!byField.has(label)) byField.set(label, []);
-    const tag = w.kind === 'learned' ? ' (learned)' : w.kind === 'rule' || w.kind === 'user' ? ' (your rule)' : '';
+    const tag = w.kind === 'learned' ? ' (learned)' : w.kind === 'user' ? ' (your keyword)' : '';
     byField.get(label).push(`“${w.matched}”${tag}`);
   }
   for (const [label, kws] of byField) parts.push(`${kws.join(', ')} in ${label}`);
@@ -490,7 +529,6 @@ function describeWhy(why) {
 
 export function emptyPrefs() {
   return {
-    rules: [],
     learnedKeywords: {},
     retailerPrefs: {},
     corrections: [],
@@ -550,7 +588,6 @@ export function forgetCollection(prefs, collectionId, replacementId = null) {
     if (Object.keys(e).length) rp[host] = e;
   }
   next.retailerPrefs = rp;
-  next.rules = (next.rules || []).map((r) => (r.collectionId === collectionId ? (replacementId ? { ...r, collectionId: replacementId } : null) : r)).filter(Boolean);
   next.corrections = (next.corrections || [])
     .map((c) => {
       if (c.to === collectionId) return replacementId ? { ...c, to: replacementId } : null;

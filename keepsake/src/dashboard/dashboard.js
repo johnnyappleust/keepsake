@@ -5,7 +5,7 @@
 import { createStore, chromeBackend } from '../shared/storage.js';
 import { MSG } from '../shared/messages.js';
 import { el, clear, formatPrice, formatDate, sanitizeText, parsePrice, debounce, pluralize, hostnameOf, prettyRetailer } from '../shared/util.js';
-import { classify } from '../shared/categorizer.js';
+import { classify, nearMatchCollection } from '../shared/categorizer.js';
 import { openableUrl } from '../shared/url.js';
 import * as UI from './ui.js';
 import { renderSettings, renderAI, renderPrivacy, analyzeItems } from './settings.js';
@@ -15,6 +15,18 @@ import { runAiCleanup, renderAiLog } from './aiCleanup.js';
 
 const store = createStore(chromeBackend());
 const $ = (id) => document.getElementById(id);
+
+// Sort and filter controls sit at the top of the grid. The view is cleared on every
+// render, so they're built once here and re-attached rather than looked up by id.
+const sortSelect = el('select', { class: 'select select-sm', 'aria-label': 'Sort' }, [
+  el('option', { value: 'newest', text: 'Newest' }),
+  el('option', { value: 'oldest', text: 'Oldest' }),
+  el('option', { value: 'price-asc', text: 'Price: low to high' }),
+  el('option', { value: 'price-desc', text: 'Price: high to low' }),
+]);
+const retailerSelect = el('select', { class: 'select select-sm', 'aria-label': 'Filter by retailer' });
+const sourceTypeSelect = el('select', { class: 'select select-sm', 'aria-label': 'Filter by source' });
+const gridFilters = el('div', { class: 'grid-filters' }, [sortSelect, retailerSelect, sourceTypeSelect]);
 
 // Labels for the "import method" filter — keys match item.type in shared/storage.js.
 const SOURCE_TYPE_LABELS = { instagram: 'Instagram', inspiration: 'Inspiration', product: 'Saved from a page' };
@@ -134,16 +146,16 @@ function bindChrome() {
     state.shown = 120;
     renderView();
   }, 120));
-  $('sortSelect').addEventListener('change', () => {
-    state.sort = $('sortSelect').value;
+  sortSelect.addEventListener('change', () => {
+    state.sort = sortSelect.value;
     renderView();
   });
-  $('retailerSelect').addEventListener('change', () => {
-    state.retailer = $('retailerSelect').value;
+  retailerSelect.addEventListener('change', () => {
+    state.retailer = retailerSelect.value;
     renderView();
   });
-  $('sourceTypeSelect').addEventListener('change', () => {
-    state.sourceType = $('sourceTypeSelect').value;
+  sourceTypeSelect.addEventListener('change', () => {
+    state.sourceType = sourceTypeSelect.value;
     renderView();
   });
   $('selectToggle').addEventListener('click', () => (state.selecting ? exitSelection(true) : enterSelection()));
@@ -218,21 +230,42 @@ function setCount(id, n) {
   if (node) node.textContent = n ? String(n) : '';
 }
 
-function renderSidebarCollections() {
-  const list = $('collectionList');
-  clear(list);
+function liveCounts() {
   const counts = new Map();
   for (const i of state.items) if (!i.archived) counts.set(i.collectionId, (counts.get(i.collectionId) || 0) + 1);
+  return counts;
+}
+
+// Pinned collections first, in the order the user dragged them into; the rest by
+// item count, largest first.
+function sidebarOrder(counts = liveCounts()) {
+  const pinned = state.collections.filter((c) => c.pinned);
+  const rest = state.collections.filter((c) => !c.pinned)
+    .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0) || a.name.localeCompare(b.name));
+  return [...pinned, ...rest];
+}
+
+function pinnedIds() {
+  return state.collections.filter((c) => c.pinned).map((c) => c.id);
+}
+
+function renderSidebarCollections() {
+  const list = $('collectionList');
+  const scrollTop = list.scrollTop;
+  clear(list);
+  const counts = liveCounts();
   const covers = new Map();
   for (const i of state.items) if (i.image && !i.archived && !covers.has(i.collectionId)) covers.set(i.collectionId, i.image);
-  for (const c of state.collections) {
+  const help = $('collectionHelp');
+  if (help) help.textContent = pinnedIds().length > 1 ? 'Drag pinned collections to reorder' : 'Pin a collection to keep it on top';
+  for (const c of sidebarOrder(counts)) {
     const active = state.route.name === 'c' && state.route.id === c.id;
     const cover = c.coverImage || covers.get(c.id) || '';
     const coverNode = el('span', { class: 'collection-cover' }, cover ? [el('img', { src: cover, alt: '', loading: 'lazy', onError: (e) => { e.target.remove(); } })] : [UI.initialFor(c.name)]);
     if (!cover) coverNode.style.background = c.color || '#8A9A88';
     const li = el('li', {
-      class: `collection-item ${active ? 'active' : ''}`,
-      draggable: true,
+      class: `collection-item ${active ? 'active' : ''} ${c.pinned ? 'pinned' : ''}`,
+      draggable: !!c.pinned,
       tabindex: '0',
       role: 'link',
       dataset: { id: c.id },
@@ -241,7 +274,7 @@ function renderSidebarCollections() {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           navigate(`#c/${c.id}`);
-        } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        } else if (c.pinned && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
           e.preventDefault();
           moveCollectionBy(c.id, e.key === 'ArrowUp' ? -1 : 1).then(() => {
             const again = list.querySelector(`[data-id="${c.id}"]`);
@@ -249,10 +282,30 @@ function renderSidebarCollections() {
           });
         }
       },
-    }, [coverNode, el('span', { class: 'collection-name' }, [c.name]), el('span', { class: 'collection-count' }, [String(counts.get(c.id) || '')])]);
-    bindDrag(li, list);
+    }, [
+      coverNode,
+      el('span', { class: 'collection-name' }, [c.name]),
+      el('button', {
+        type: 'button',
+        class: `collection-pin ${c.pinned ? 'is-pinned' : ''}`,
+        'aria-pressed': c.pinned ? 'true' : 'false',
+        'aria-label': c.pinned ? `Unpin ${c.name}` : `Pin ${c.name} to the top`,
+        title: c.pinned ? 'Unpin' : 'Pin to the top',
+        draggable: false,
+        onClick: (e) => {
+          e.stopPropagation();
+          togglePin(c);
+        },
+        onKeydown: (e) => e.stopPropagation(),
+      }, [UI.pinIcon(c.pinned)]),
+      el('span', { class: 'collection-count' }, [String(counts.get(c.id) || '')]),
+    ]);
+    if (c.pinned) bindDrag(li, list);
     list.append(li);
   }
+  // Rebuilding the list resets its scroll; put it back so clicking a collection
+  // further down doesn't jump the list to the top.
+  list.scrollTop = scrollTop;
   markListScrolled(list);
 }
 
@@ -289,7 +342,7 @@ function bindDrag(li, list) {
     list.querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
   });
   li.addEventListener('dragover', (e) => {
-    if (!dragId || dragId === li.dataset.id) return;
+    if (!dragId || dragId === li.dataset.id || !li.classList.contains('pinned')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     const rect = li.getBoundingClientRect();
@@ -300,10 +353,10 @@ function bindDrag(li, list) {
   li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after'));
   li.addEventListener('drop', async (e) => {
     e.preventDefault();
-    if (!dragId || dragId === li.dataset.id) return;
+    if (!dragId || dragId === li.dataset.id || !li.classList.contains('pinned')) return;
     const rect = li.getBoundingClientRect();
     const before = e.clientY < rect.top + rect.height / 2;
-    const ids = ctx.regularCollections().map((c) => c.id).filter((id) => id !== dragId);
+    const ids = pinnedIds().filter((id) => id !== dragId);
     const idx = ids.indexOf(li.dataset.id);
     ids.splice(before ? idx : idx + 1, 0, dragId);
     await store.reorderCollections(ids);
@@ -311,7 +364,7 @@ function bindDrag(li, list) {
 }
 
 async function moveCollectionBy(id, delta) {
-  const ids = ctx.regularCollections().map((c) => c.id);
+  const ids = pinnedIds();
   const idx = ids.indexOf(id);
   const to = idx + delta;
   if (idx < 0 || to < 0 || to >= ids.length) return;
@@ -345,22 +398,25 @@ function renderToolbar() {
   if (isGrid) {
     const base = baseItems();
     const retailers = [...new Set(base.map((i) => i.retailer).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    const sel = $('retailerSelect');
+    const sel = retailerSelect;
     const cur = state.retailer;
     clear(sel);
     sel.append(el('option', { value: '', text: 'All retailers' }));
     for (const rname of retailers) sel.append(el('option', { value: rname, text: rname }));
     sel.value = retailers.includes(cur) ? cur : '';
     if (!retailers.includes(cur)) state.retailer = '';
+    // A filter with a single choice filters nothing, so it's hidden.
+    sel.hidden = retailers.length < 2;
     const sourceTypes = [...new Set(base.map((i) => i.type).filter(Boolean))].sort((a, b) => (SOURCE_TYPE_LABELS[a] || a).localeCompare(SOURCE_TYPE_LABELS[b] || b));
-    const sourceSel = $('sourceTypeSelect');
+    const sourceSel = sourceTypeSelect;
     const curSource = state.sourceType;
     clear(sourceSel);
     sourceSel.append(el('option', { value: '', text: 'All sources' }));
     for (const t of sourceTypes) sourceSel.append(el('option', { value: t, text: SOURCE_TYPE_LABELS[t] || t }));
     sourceSel.value = sourceTypes.includes(curSource) ? curSource : '';
     if (!sourceTypes.includes(curSource)) state.sourceType = '';
-    $('sortSelect').value = state.sort;
+    sourceSel.hidden = sourceTypes.length < 2;
+    sortSelect.value = state.sort;
     $('searchInput').value = state.search;
     $('selectToggle').setAttribute('aria-pressed', state.selecting ? 'true' : 'false');
     $('selectToggle').textContent = state.selecting ? 'Done' : 'Select';
@@ -472,6 +528,7 @@ function renderGrid(view) {
     }
     view.append(collectionHero(col));
   }
+  if (baseItems().length) view.append(gridFilters);
   const items = currentGridItems();
   if (!items.length) {
     view.append(gridEmptyState());
@@ -729,12 +786,16 @@ async function moveDialog(items) {
   const newRow = el('div', { class: 'field hidden' }, [newInput]);
   const learnCheck = el('input', { type: 'checkbox' });
   learnCheck.checked = false;
+  // From a collection page, the whole collection can go instead: a merge.
+  const source = state.route.name === 'c' ? ctx.collectionById(state.route.id) : null;
+  const mergeCheck = el('input', { type: 'checkbox' });
   const body = [
     el('p', { class: 'modal-text' }, [items.length === 1 ? `Move “${cut(items[0].title, 70)}” to:` : `Move ${pluralize(items.length, 'item', 'items')} to:`]),
     select,
     newRow,
     el('label', { class: 'check' }, [learnCheck, el('span', {}, ['Use this choice for similar items in the future'])]),
     el('p', { class: 'help' }, ['Keepsake always learns a little from moves. Ticking this makes the lesson stronger.']),
+    source ? el('label', { class: 'check' }, [mergeCheck, el('span', {}, [`Merge: move everything in “${source.name}” and remove “${source.name}”. Its name becomes an alias of the new collection.`])]) : null,
   ];
   const result = await UI.openModal({
     title: 'Move to collection',
@@ -749,9 +810,17 @@ async function moveDialog(items) {
             newInput.focus();
             throw new Error('Give the new collection a name.');
           }
-          const { collection, existed } = await store.createCollection({ name });
+          const collection = await createNamedCollection(name);
+          if (!collection) return false;
           target = collection.id;
-          if (existed) UI.toast(`Using existing collection “${collection.name}”.`);
+        }
+        if (source && mergeCheck.checked) {
+          if (target === source.id) throw new Error(`Pick a collection other than “${source.name}” to merge into.`);
+          const merged = await store.mergeCollections(source.id, target);
+          UI.toast(`Merged into ${merged.name}.`);
+          close(true);
+          navigate(`#c/${merged.id}`);
+          return false;
         }
         await store.moveItems(items.map((i) => i.id), target, { learn: learnCheck.checked ? 'strong' : 'light' });
         const col = await store.getCollection(target);
@@ -1142,16 +1211,14 @@ function collectionHero(col) {
   const coverNode = el('div', { class: 'cover' }, cover ? [el('img', { src: cover, alt: '', onError: (e) => e.target.remove() })] : [UI.initialFor(col.name)]);
   coverNode.style.background = col.color || '#8A9A88';
   const actions = [
-    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => renameCollection(col) }, ['Rename']),
-    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => editCollection(col) }, ['Keywords & color']),
-    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => mergeCollection(col) }, ['Merge into…']),
+    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => editCollection(col) }, ['Keywords']),
     el('button', { type: 'button', class: 'btn btn-sm btn-danger', onClick: () => deleteCollection(col) }, ['Delete']),
   ];
   const keywords = col.keywords || [];
   return el('div', { class: 'collection-hero' }, [
     coverNode,
     el('div', { class: 'collection-hero-text' }, [
-      el('h2', {}, [col.name]),
+      collectionNameField(col),
       el('p', {}, [col.description || 'No description yet.', ` · ${pluralize(count, 'item', 'items')}`]),
       keywords.length ? el('div', { class: 'chips' }, keywords.slice(0, 12).map((k) => el('span', { class: 'pill' }, [k]))) : null,
       el('div', { class: 'collection-hero-actions' }, actions),
@@ -1162,74 +1229,145 @@ function collectionHero(col) {
 async function newCollection() {
   const name = await UI.promptDialog({ title: 'New collection', label: 'Name', placeholder: 'e.g. Garden', confirmLabel: 'Create' });
   if (!name) return;
+  const collection = await createNamedCollection(name);
+  if (collection) navigate(`#c/${collection.id}`);
+}
+
+// Creates the collection the user named. When an existing one is close but not the
+// same name ("Food" vs Kitchen, which covers food), asks which they meant rather than
+// quietly using the existing one. Resolves the collection, or null if cancelled.
+async function createNamedCollection(name) {
+  const near = nearMatchCollection(name, state.collections);
+  if (near) {
+    const other = near.collection.name;
+    const choice = await UI.openModal({
+      title: `Create “${name}” or use “${other}”?`,
+      body: el('p', { class: 'modal-text' }, [near.matched
+        ? `You already have “${other}”, which also covers “${near.matched}”.`
+        : `You already have a collection with a similar name, “${other}”.`]),
+      actions: [
+        { label: 'Cancel', quiet: true, value: null },
+        { label: `Use “${other}”`, value: 'use' },
+        { label: `Create “${name}”`, primary: true, value: 'create', autofocus: true },
+      ],
+    });
+    if (choice === 'use') return near.collection;
+    if (choice !== 'create') return null;
+  }
   const { collection, existed } = await store.createCollection({ name });
-  if (existed) UI.toast(`“${collection.name}” already exists — opening it.`);
-  navigate(`#c/${collection.id}`);
+  if (existed) UI.toast(`“${collection.name}” already exists — using it.`);
+  return collection;
 }
 
-async function renameCollection(col) {
-  const name = await UI.promptDialog({ title: 'Rename collection', label: 'Name', value: col.name, confirmLabel: 'Rename' });
-  if (!name || name === col.name) return;
-  await store.updateCollection(col.id, { name });
-  UI.toast('Renamed.', { duration: 1500 });
+// A newly pinned collection goes to the very top; pinned ones keep their dragged order.
+async function togglePin(col) {
+  const pinned = !col.pinned;
+  await store.updateCollection(col.id, { pinned });
+  if (pinned) await store.reorderCollections([col.id, ...pinnedIds().filter((id) => id !== col.id)]);
+  UI.toast(pinned ? `Pinned “${col.name}” to the top.` : `Unpinned “${col.name}”.`, { duration: 2250 });
 }
 
-const SWATCHES = ['#8A9A88', '#5F6F5E', '#B9924F', '#A6503F', '#6B7C9B', '#8C6B8F', '#4F6F57', '#9C7A5B', '#6A6A6A', '#C97B4A'];
+// The collection's name is itself the text field. Save (✓ or Enter) and cancel (✕ or
+// Escape) appear only while the name differs from the saved one.
+function collectionNameField(col) {
+  const input = el('input', { class: 'collection-name-input', value: col.name, maxlength: '80', spellcheck: 'false', 'aria-label': 'Collection name' });
+  const save = el('button', { type: 'button', class: 'btn btn-icon btn-sm', 'aria-label': 'Save name', title: 'Save', onClick: () => commit() }, [UI.checkIcon()]);
+  const cancel = el('button', { type: 'button', class: 'btn btn-icon btn-sm', 'aria-label': 'Cancel', title: 'Cancel', onClick: () => revert() }, [UI.closeIcon()]);
+  const buttons = el('span', { class: 'collection-name-actions', hidden: true }, [save, cancel]);
+  const dirty = () => input.value.trim() !== col.name;
+  const sync = () => { buttons.hidden = !dirty(); };
+  const revert = () => {
+    input.value = col.name;
+    sync();
+    input.blur();
+  };
+  const commit = async () => {
+    const name = sanitizeText(input.value, 80);
+    if (!name) return revert();
+    if (name === col.name) return sync();
+    col.name = name;
+    input.value = name;
+    sync();
+    input.blur();
+    await store.updateCollection(col.id, { name });
+  };
+  input.addEventListener('input', sync);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      revert();
+    }
+  });
+  return el('div', { class: 'collection-name-field' }, [input, buttons]);
+}
 
 async function editCollection(col) {
+  const kw = el('textarea', { class: 'textarea', rows: '4', placeholder: 'One keyword or phrase per line — e.g. lamp, side table, throw pillow', 'aria-label': 'Keywords' });
+  kw.value = (col.keywords || []).join('\n');
   const desc = el('textarea', { class: 'textarea', rows: '2', maxlength: '300', placeholder: 'Description (optional)', 'aria-label': 'Description' });
   desc.value = col.description || '';
-  const kw = el('textarea', { class: 'textarea', rows: '3', placeholder: 'One keyword or phrase per line — e.g. lamp, side table, throw pillow', 'aria-label': 'Keywords' });
-  kw.value = (col.keywords || []).join('\n');
-  let color = col.color || SWATCHES[0];
-  const swatches = el('div', { class: 'color-swatches', role: 'radiogroup', 'aria-label': 'Color' }, SWATCHES.map((c) => {
-    const b = el('button', { type: 'button', class: 'swatch', role: 'radio', 'aria-checked': c.toLowerCase() === color.toLowerCase() ? 'true' : 'false', 'aria-label': c, onClick: () => {
-      color = c;
-      swatches.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-checked', x === b ? 'true' : 'false'));
-    } });
-    b.style.background = c;
-    return b;
-  }));
   const coverInput = el('input', { class: 'input', type: 'url', placeholder: 'https://… (leave empty to use the newest item’s image)', 'aria-label': 'Cover image URL' });
   coverInput.value = col.coverImage || '';
   await UI.openModal({
     title: `Edit “${col.name}”`,
     body: [
+      el('div', { class: 'field' }, [
+        el('label', { class: 'label' }, ['Keywords']),
+        kw,
+        el('p', { class: 'help' }, ['Items whose title or page text contains one of these are filed here. The more specific phrase wins: “coffee cup” here beats “coffee” in another collection.']),
+      ]),
       el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Description']), desc]),
-      el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Keywords']), kw, el('p', { class: 'help' }, ['Items whose title or page text contains one of these are filed here with high confidence.'])]),
-      el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Color']), swatches]),
       el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Cover image']), coverInput]),
     ],
     actions: [
       { label: 'Cancel', quiet: true },
       { label: 'Save', primary: true, onClick: async () => {
-        const keywords = kw.value.split(/\n|,/).map((s) => s.trim().toLowerCase()).filter(Boolean).slice(0, 40);
-        await store.updateCollection(col.id, { description: desc.value, keywords, color, coverImage: coverInput.value.trim() });
+        const keywords = [...new Set(kw.value.split(/\n|,/).map((s) => s.trim().toLowerCase()).filter(Boolean))].slice(0, 40);
+        const moveFrom = await confirmSharedKeywords(col, keywords);
+        if (!moveFrom) return false;
+        for (const [otherId, words] of moveFrom) {
+          const other = ctx.collectionById(otherId);
+          if (other) await store.updateCollection(otherId, { keywords: (other.keywords || []).filter((k) => !words.includes(k)) });
+        }
+        await store.updateCollection(col.id, { description: desc.value, keywords, coverImage: coverInput.value.trim() });
         UI.toast('Collection updated.', { duration: 1500 });
       } },
     ],
   });
 }
 
-async function mergeCollection(col) {
-  const others = ctx.regularCollections().filter((c) => c.id !== col.id);
-  if (!others.length) {
-    UI.toast('There is no other collection to merge into.');
-    return;
+// The exact same keyword on two collections ties, and tied items go to Review. When
+// newly added keywords already belong to another collection, offer to move them here.
+// Resolves a Map of collectionId → keywords to take from it, or null to keep editing.
+async function confirmSharedKeywords(col, keywords) {
+  const added = keywords.filter((k) => !(col.keywords || []).includes(k));
+  const shared = new Map();
+  for (const other of state.collections) {
+    if (other.id === col.id) continue;
+    const words = added.filter((k) => (other.keywords || []).includes(k));
+    if (words.length) shared.set(other.id, words);
   }
-  const select = UI.selectInput({ value: others[0].id, options: others.map((c) => ({ value: c.id, label: c.name })), onChange: () => {}, label: 'Merge into' });
-  const ok = await UI.openModal({
-    title: `Merge “${col.name}”`,
+  if (!shared.size) return shared;
+  const lines = [...shared].map(([id, words]) => `${words.map((w) => `“${w}”`).join(', ')} ${words.length === 1 ? 'is' : 'are'} already ${words.length === 1 ? 'a keyword' : 'keywords'} of “${ctx.collectionById(id)?.name || 'another collection'}”.`);
+  const choice = await UI.openModal({
+    title: 'Keyword already in use',
     body: [
-      el('p', { class: 'modal-text' }, [`Everything in “${col.name}” moves into the collection you pick, its name becomes an alias there, and “${col.name}” is removed. Learned preferences follow.`]),
-      el('div', { class: 'field' }, [el('label', { class: 'label' }, ['Merge into']), select]),
+      ...lines.map((t) => el('p', { class: 'modal-text' }, [t])),
+      el('p', { class: 'help' }, ['A keyword can only send items to one collection. If both keep it, matching items wait in Review.']),
     ],
-    actions: [{ label: 'Cancel', quiet: true, value: false }, { label: 'Merge', primary: true, value: true }],
+    actions: [
+      { label: 'Go back', quiet: true, value: 'back' },
+      { label: 'Keep in both', value: 'both' },
+      { label: `Move to “${col.name}”`, primary: true, value: 'move', autofocus: true },
+    ],
   });
-  if (ok !== true) return;
-  const target = await store.mergeCollections(col.id, select.value);
-  UI.toast(`Merged into ${target.name}.`);
-  navigate(`#c/${target.id}`);
+  if (choice === 'move') return shared;
+  if (choice === 'both') return new Map();
+  return null;
 }
 
 async function deleteCollection(col) {
@@ -1280,9 +1418,8 @@ function renderReview(view) {
           select.value = '';
           const name = await UI.promptDialog({ title: 'New collection', label: 'Name', placeholder: 'e.g. Garden', confirmLabel: 'Create' });
           if (!name) return;
-          const { collection, existed } = await store.createCollection({ name });
-          if (existed) UI.toast(`“${collection.name}” already exists — using it.`);
-          await fileItem(item, collection.id);
+          const collection = await createNamedCollection(name);
+          if (collection) await fileItem(item, collection.id);
           return;
         }
         await fileItem(item, v);

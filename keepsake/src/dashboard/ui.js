@@ -35,6 +35,7 @@ export function openModal({ title, body, actions = [], wide = false, onClose = n
       resolve(value);
     };
     const onKey = (e) => {
+      if (overlay !== root.lastElementChild) return; // a dialog opened on top handles its own keys
       if (e.key === 'Escape') {
         e.stopPropagation();
         close(undefined);
@@ -177,6 +178,9 @@ export function promptDialog({ title, label, value = '', placeholder = '', confi
 }
 
 // Toasts ---------------------------------------------------------------------------
+// Every toast stays up this much longer than the duration it asks for.
+const TOAST_TIME_SCALE = 1.25;
+
 export function toast(message, { action = null, duration = 5000, kind = '' } = {}) {
   const root = toastRoot();
   if (!root) return;
@@ -199,7 +203,7 @@ export function toast(message, { action = null, duration = 5000, kind = '' } = {
   };
   root.append(node);
   while (root.children.length > 3) root.firstChild.remove();
-  timer = setTimeout(dismiss, duration);
+  timer = setTimeout(dismiss, duration * TOAST_TIME_SCALE);
   return dismiss;
 }
 
@@ -253,6 +257,11 @@ export function pencilIcon() {
 }
 export function trashIcon() {
   return svg(['M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13', 'M10 11v6M14 11v6']);
+}
+export function pinIcon(filled = false) {
+  const s = svg(['M9 4h6l-1 6 3 3v1.5H7V13l3-3-1-6Z', 'M12 14.5V20']);
+  if (filled) s.querySelector('path').setAttribute('fill', 'currentColor');
+  return s;
 }
 export function folderIcon() {
   return svg(['M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v9A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18V7Z']);

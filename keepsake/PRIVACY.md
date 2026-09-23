@@ -1,6 +1,6 @@
 # Keepsake privacy policy
 
-_Last updated: September 2026 · applies to Keepsake 1.1.0_
+_Last updated: September 2026 · applies to Keepsake 1.2.0_
 
 Keepsake is a browser extension that saves products and inspiration into collections **stored only in your browser**. It has no server, no account, no analytics and no advertising. This document describes exactly what it stores, what it can send and when, and how to inspect or erase all of it.
 
@@ -11,8 +11,8 @@ All data lives in `chrome.storage.local` for the browser profile you installed i
 | Key | Contents |
 | --- | --- |
 | `keepsake_items` | Each save: title, price and currency, retailer/host, page URL and canonical URL, image URL(s) — or, for Instagram imports, a small locally stored thumbnail (JPEG, ≤ 320 px), your note, flags (favorite, purchased, archived), the collection it is in, the confidence and one-line reason the categorizer gave, the store's own product type and tags when the page publishes them (used to sort the item), and for Instagram cards the creator name, caption, Saved-collection name, post date, location, hashtags, caption links and creator-tagged products. Products you save from a post keep a reference to that post's id. |
-| `keepsake_collections` | Collection names, descriptions, colors, keywords, aliases, cover image URL and order. |
-| `keepsake_prefs` | Your categorization rules, the confidence threshold, the auto-create setting, keyword and retailer weights learned from your moves, and a capped history of the last 200 corrections (title, from → to). |
+| `keepsake_collections` | Collection names, descriptions, keywords, aliases, cover image URL, placeholder color, whether it's pinned, and order. |
+| `keepsake_prefs` | The confidence threshold, the auto-create setting, keyword and retailer weights learned from your moves, and a capped history of the last 200 corrections (title, from → to). |
 | `keepsake_settings` | Theme, on-page button options, Instagram import options, AI provider settings (provider, base URL, model, enabled flags), onboarding flag. |
 | `keepsake_importHistory` | Which Instagram post URLs have already been imported, so re-scans don't duplicate. |
 | `keepsake_secrets` | Your AI API key, if you added one. **Excluded from exports.** |

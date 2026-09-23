@@ -223,10 +223,11 @@ async function saveProduct(rawProduct, { collectionId = null, force = false, sou
 async function showPageToast(tabId, res, product) {
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['src/content/toast.js'] });
+    const collections = res.ok && !res.duplicate ? (await store.getCollections()).map((c) => ({ id: c.id, name: c.name })) : [];
     const payload = res.ok
       ? res.duplicate
         ? { kind: 'duplicate', existing: res.existing, title: (product && product.title) || '' }
-        : { kind: 'saved', itemId: res.item.id, title: res.item.title, collectionName: res.collection ? res.collection.name : 'Keepsake', isInbox: !!res.classification?.isInbox }
+        : { kind: 'saved', itemId: res.item.id, title: res.item.title, collectionId: res.item.collectionId || '', collectionName: res.collection ? res.collection.name : 'Keepsake', isInbox: !!res.classification?.isInbox, collections }
       : { kind: 'error', error: res.error || 'Something went wrong.' };
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -238,14 +239,27 @@ async function showPageToast(tabId, res, product) {
         const cut = (s, n) => (String(s || '').length > n ? String(s).slice(0, n - 1) + '…' : String(s || ''));
         if (p.kind === 'error') t.show({ title: 'Couldn’t save', message: p.error });
         else if (p.kind === 'duplicate') t.show({ title: 'Already in Keepsake', message: `“${cut(p.existing.title || p.title, 60)}” is ${p.existing.collectionName ? 'in ' + p.existing.collectionName : 'already saved'}.`, actions: [{ label: 'Open', primary: true, onClick: () => send({ type: M.OPEN_DASHBOARD, hash: `#item/${p.existing.id}` }) }] });
-        else t.show({
-          title: p.isInbox ? 'Not sure — saved for review' : `Saved to ${p.collectionName}`,
-          message: p.isInbox ? `Not sure where “${cut(p.title, 50)}” belongs — sort it from the Review queue.` : cut(p.title, 70),
-          actions: [
-            { label: 'Undo', onClick: () => send({ type: M.UNDO_SAVE, itemId: p.itemId }) },
-            { label: 'Edit', quiet: true, onClick: () => send({ type: M.OPEN_DASHBOARD, hash: `#item/${p.itemId}` }) },
-          ],
-        });
+        else {
+          // Say where it went, with a one-step move in case that's the wrong collection.
+          const nameOf = (id) => (p.collections.find((c) => c.id === id) || {}).name || 'collection';
+          t.show({
+            title: p.isInbox ? 'Not sure — saved for review' : `Saved to ${p.collectionName}`,
+            message: p.isInbox ? `Not sure where “${cut(p.title, 50)}” belongs. Pick a collection or sort it later.` : cut(p.title, 70),
+            picker: p.collections.length ? { options: p.collections, selectedId: p.collectionId, label: 'Move to collection' } : null,
+            duration: 10000,
+            actions: [
+              { label: 'Move', onClick: ({ pickedId }) => {
+                if (!pickedId || pickedId === p.collectionId) return;
+                chrome.runtime.sendMessage({ type: M.UPDATE_ITEM, itemId: p.itemId, patch: { collectionId: pickedId }, learn: 'light' }, (up) => {
+                  void chrome.runtime.lastError;
+                  t.show({ title: up && up.ok ? `Moved to ${nameOf(pickedId)}` : 'Couldn’t move', message: up && up.ok ? 'Keepsake will remember this for similar items.' : (up && up.error) || '' });
+                });
+              } },
+              { label: 'Undo', quiet: true, onClick: () => send({ type: M.UNDO_SAVE, itemId: p.itemId }) },
+              { label: 'Edit', quiet: true, onClick: () => send({ type: M.OPEN_DASHBOARD, hash: `#item/${p.itemId}` }) },
+            ],
+          });
+        }
       },
     });
   } catch {
