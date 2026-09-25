@@ -17,14 +17,18 @@
     <div class="scrim" id="scrim" hidden></div>
 
     <aside class="sidebar" id="sidebar" aria-label="Navigation">
-      <div class="sidebar-brand">
+      <a class="sidebar-brand" href="#home" aria-label="Keepsake home">
         <span class="mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.2a.8.8 0 0 1-1.28.64L12 16.9l-5.22 3.94A.8.8 0 0 1 5.5 20.2V5A1.5 1.5 0 0 1 7 3.5Z" fill="#F5F1EA"/></svg>
         </span>
         <span class="brand-name">Keepsake</span>
-      </div>
+      </a>
 
       <nav class="nav" aria-label="Views">
+        <a class="nav-item" href="#home" data-route="home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-6h-6v6H5.5A1.5 1.5 0 0 1 4 19v-8.5Z"/></svg>
+          <span>Home</span>
+        </a>
         <a class="nav-item" href="#all" data-route="all">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
           <span>All saves</span><span class="count" id="countAll"></span>
@@ -33,7 +37,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.8 2.5 5.3 5.8.7-4.3 4 1.1 5.8L12 16.8l-5.1 2.8 1.1-5.8-4.3-4 5.8-.7L12 3.8Z"/></svg>
           <span>Favorites</span><span class="count" id="countFav"></span>
         </a>
-        <a class="nav-item" href="#review" data-route="review">
+        <a class="nav-item" href="#purchased" data-route="purchased">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12H5L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/><path d="m9.5 14 1.8 1.8 3.2-3.3"/></svg>
+          <span>Purchased</span><span class="count" id="countPurchased"></span>
+        </a>
+        <a class="nav-item" href="#review" data-route="review" id="navReview">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l2.5 1.5"/></svg>
           <span>Review</span><span class="count" id="countReview"></span>
         </a>
@@ -49,6 +57,9 @@
           <button class="btn btn-quiet btn-sm" id="newCollectionBtn" type="button" aria-label="New collection">＋ New</button>
         </div>
         <ul class="collection-list" id="collectionList" aria-label="Collections"></ul>
+        <a class="nav-item collections-all" href="#collections" data-route="collections">
+          <span>All collections</span><span class="count" id="countCollections"></span>
+        </a>
         <p class="help sidebar-help" id="collectionHelp">Pin a collection to keep it on top</p>
       </div>
 
@@ -75,7 +86,7 @@
     <main class="main" id="main">
       <header class="toolbar" id="toolbar">
         <div class="toolbar-left">
-          <h1 class="view-title" id="viewTitle">All saves</h1>
+          <h1 class="view-title" id="viewTitle">Home</h1>
           <span class="view-count muted small" id="viewCount"></span>
         </div>
         <div class="toolbar-right" id="toolbarControls">

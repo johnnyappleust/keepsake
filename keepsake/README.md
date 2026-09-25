@@ -8,7 +8,7 @@ Save products from any site with one click, let your collections sort themselves
 - Files each save into a collection automatically (Home Decor, Clothing, Technology, Kitchen, Camping & Outdoors, Weddings, Pets, …) and learns from your corrections. Unsure saves are left uncategorized and wait in **Review** instead of being guessed.
 - Optional on-page save buttons for product grids — off until you turn them on, and only on sites you grant.
 - Import your own **Instagram Saved collections**, then **read each post's page** for the real caption, creator, links and creator-tagged products (name, price, shop URL) — no login, no credentials, just your existing session.
-- Calm masonry dashboard with search, sort, filters, favorites, purchased/archive, bulk actions, drag-to-reorder collections, light/dark.
+- Calm dashboard: a Home page with search, your latest saves and your top collections; a masonry grid with search, sort, filters, favorites, purchased, archive, bulk actions; collection tiles that scale to hundreds of collections; light/dark.
 - **No account. No server. No telemetry.** Everything lives in `chrome.storage.local`. Export/import as JSON. Delete everything in one click.
 - Optional, opt-in, bring-your-own-key AI to help identify products in Instagram saves — with a preview of exactly what leaves the browser.
 
@@ -107,15 +107,17 @@ Keepsake starts with three collections — Home Decor, Clothing and Technology �
 
 ## The dashboard
 
-Open it from the popup, from the extension's Options, or at `#…` routes:
+Open it from the popup or from the extension's Options; it opens on **Home**, and the Keepsake name in the top-left corner always goes back there. Routes:
 
-`#all` · `#favorites` · `#review` · `#archive` · `#c/<collection-id>` · `#item/<item-id>` (opens the item) · `#import` · `#settings` · `#ai` · `#ailog` · `#privacy` · `#welcome`
+`#home` · `#all` · `#favorites` · `#purchased` · `#review` · `#archive` · `#collections` · `#c/<collection-id>` · `#item/<item-id>` (opens the item) · `#import` · `#settings` · `#ai` · `#ailog` · `#privacy` · `#welcome`
 
+- **Home**: a search box (typing jumps to All saves with the search filled in), a "N saves waiting to be filed" line that appears only when Review has something, one row of your most recent saves, and five collection tiles — pinned collections first (up to five), then the ones you saved into most recently.
+- **Menu**: Home, All saves, Favorites, Purchased (everything marked purchased, archived or not) and Archive. **Review** appears only while something is waiting to be filed.
 - **Masonry grid** of cards with image (or a text placeholder when there is none), title, price, retailer or Instagram creator, note, favorite star, source badge and "Needs sorting" label. Clicking a card opens a lightweight **Quick view** (image, title, price, a link to the original page); "Edit details" from there or from a card's **⋯** menu opens the full editor.
 - **Search** across titles, retailers, notes, descriptions, prices, captions and creators; **sort** newest/oldest/price and **filter** by retailer or source from the compact bar above the grid; empty states for every view.
 - **Item details**: the **exact link** the item was saved from, shown in full as a selectable field with **Copy** and **Visit page** (**Open post** for Instagram) — and editable, so you can point an item at the right product page if the extractor grabbed a listing or a redirect. Changing the link updates the host, refreshes an auto-derived retailer name, re-keys duplicate detection, and refuses a link another item already has. Alongside it: edit title/price/note, choose a cover from the candidates, move collection (optionally "use for similar"), favorite / purchased / archived, delete with confirmation.
 - **Select** mode for bulk move, favorite, archive/unarchive, delete and (when AI is on) *Find products*.
-- **Collections**: the sidebar lists them by item count, largest first; hover a collection and click its **pin** to keep it on top (drag or Alt+↑/↓ to reorder pinned ones). Rename by editing the name on the collection's page; keywords, description and cover (newest image or your own URL) under *Keywords*; merge by selecting items and ticking *Merge* in **Move to…**; delete (items become uncategorized, waiting in Review, unless you choose otherwise).
+- **Collections**: the sidebar lists every pinned collection, then the ones you saved into most recently, up to eight; the collection you have open is always listed. **All collections** opens every collection as a cover tile (a collage of its latest images), pinned first, with a name/keyword search and sorting by recently saved to, A–Z or most saves. Pin a collection from its tile, its page, or the sidebar (drag or Alt+↑/↓ to reorder pinned ones). Rename by editing the name on the collection's page; keywords, description and cover (newest image or your own URL) under *Keywords*; merge by selecting items and ticking *Merge* in **Move to…**; delete (items become uncategorized, waiting in Review, unless you choose otherwise).
 - **Theme**: system / light / dark (toolbar sun icon or Settings → Appearance).
 - **Load sample data** from the welcome page or the empty state to see the layout; delete it any time.
 

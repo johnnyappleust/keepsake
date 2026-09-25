@@ -66,13 +66,13 @@ async function applyTheme() {
 // --- boot --------------------------------------------------------------------------------------
 
 async function boot() {
-  $('openDashboard').addEventListener('click', () => openDashboard('#all'));
+  $('openDashboard').addEventListener('click', () => openDashboard('#home'));
   $('importTabsBtn').addEventListener('click', () => openDashboard('#tabsimport'));
   $('openDashboardBrand').addEventListener('click', (e) => {
     e.preventDefault();
-    openDashboard('#all');
+    openDashboard('#home');
   });
-  $('restrictedDashboard').addEventListener('click', () => openDashboard('#all'));
+  $('restrictedDashboard').addEventListener('click', () => openDashboard('#home'));
   $('floatingLink').addEventListener('click', () => openDashboard('#settings'));
   await applyTheme();
 

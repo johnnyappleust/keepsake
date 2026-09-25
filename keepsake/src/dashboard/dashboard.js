@@ -32,7 +32,7 @@ const gridFilters = el('div', { class: 'grid-filters' }, [sortSelect, retailerSe
 const SOURCE_TYPE_LABELS = { instagram: 'Instagram', inspiration: 'Inspiration', product: 'Saved from a page' };
 
 const state = {
-  route: { name: 'all', id: '' },
+  route: { name: 'home', id: '' },
   collections: [],
   items: [],
   prefs: null,
@@ -42,6 +42,9 @@ const state = {
   sort: 'newest',
   retailer: '',
   sourceType: '',
+  colSearch: '',
+  colSort: 'recent',
+  focusSearch: false,
   selecting: false,
   selected: new Set(),
   shown: 120,
@@ -81,7 +84,7 @@ async function boot() {
   window.addEventListener('hashchange', () => {
     state.route = parseHash();
     state.shown = 120;
-    if (!['all', 'favorites', 'archive', 'c', 'item'].includes(state.route.name)) exitSelection(false);
+    if (!GRID_ROUTES.has(state.route.name)) exitSelection(false);
     render();
   });
   state.route = parseHash();
@@ -125,9 +128,9 @@ function applyTheme() {
 
 function parseHash() {
   const h = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (!h) return { name: 'all', id: '' };
+  if (!h) return { name: 'home', id: '' };
   const [name, ...rest] = h.split('/');
-  return { name: name || 'all', id: rest.join('/') };
+  return { name: name || 'home', id: rest.join('/') };
 }
 
 function navigate(hash) {
@@ -182,7 +185,7 @@ function bindChrome() {
   document.addEventListener('keydown', (e) => {
     if (e.key === '/' && !/input|textarea|select/i.test(document.activeElement?.tagName || '') && !document.body.classList.contains('modal-open')) {
       e.preventDefault();
-      $('searchInput').focus();
+      ($('homeSearch') || $('collectionSearch') || $('searchInput')).focus();
     }
     if (e.key === 'Escape' && state.selecting && !document.body.classList.contains('modal-open')) exitSelection(true);
   });
@@ -198,7 +201,7 @@ function toggleNav(force) {
 
 // --- rendering -------------------------------------------------------------------------
 
-const GRID_ROUTES = new Set(['all', 'favorites', 'archive', 'c', 'item']);
+const GRID_ROUTES = new Set(['all', 'favorites', 'purchased', 'archive', 'c', 'item']);
 
 // keepScroll: re-render the current view in place (data changed underneath it)
 // instead of treating it as a navigation, so the page stays where the user was.
@@ -220,8 +223,13 @@ function renderNav() {
   const live = state.items.filter((i) => !i.archived);
   setCount('countAll', live.length);
   setCount('countFav', live.filter((i) => i.favorite).length);
-  setCount('countReview', live.filter((i) => !i.collectionId).length);
+  setCount('countPurchased', state.items.filter((i) => i.purchased).length);
+  const toReview = live.filter((i) => !i.collectionId).length;
+  setCount('countReview', toReview);
+  // Review is only in the menu while something is waiting (or while it's open).
+  $('navReview').classList.toggle('hidden', !toReview && state.route.name !== 'review');
   setCount('countArchive', state.items.filter((i) => i.archived).length);
+  setCount('countCollections', state.collections.length);
   setCount('countImport', state.scan && state.scan.posts && state.scan.status === 'done' ? state.scan.posts.length : 0);
 }
 
@@ -236,13 +244,56 @@ function liveCounts() {
   return counts;
 }
 
-// Pinned collections first, in the order the user dragged them into; the rest by
-// item count, largest first.
-function sidebarOrder(counts = liveCounts()) {
+// Per collection: live item count, when something was last saved into it, and up to
+// four images for a cover collage. state.items is newest first, so the first item
+// seen for a collection is its latest.
+function collectionStats() {
+  const stats = new Map();
+  for (const i of state.items) {
+    if (i.archived || !i.collectionId) continue;
+    let s = stats.get(i.collectionId);
+    if (!s) stats.set(i.collectionId, (s = { count: 0, last: i.createdAt || '', images: [] }));
+    s.count += 1;
+    if (i.image && s.images.length < 4 && !s.images.includes(i.image)) s.images.push(i.image);
+  }
+  return stats;
+}
+
+// Unpinned collections, the ones saved into most recently first; collections with
+// nothing in them go last, biggest then A–Z.
+function byRecentActivity(list, stats) {
+  return [...list].sort((a, b) => {
+    const la = stats.get(a.id)?.last || '';
+    const lb = stats.get(b.id)?.last || '';
+    if (la !== lb) return la < lb ? 1 : -1;
+    return (stats.get(b.id)?.count || 0) - (stats.get(a.id)?.count || 0) || a.name.localeCompare(b.name);
+  });
+}
+
+// How many collections the sidebar lists before "All collections" takes over.
+const SIDEBAR_COLLECTIONS = 8;
+// How many collection tiles Home shows.
+const HOME_TILES = 5;
+
+// The sidebar can't list hundreds of collections, so it shows every pinned one, in
+// the order the user dragged them into, then fills up to SIDEBAR_COLLECTIONS with the
+// ones saved into most recently. The open collection is always listed.
+function sidebarOrder(stats = collectionStats()) {
   const pinned = state.collections.filter((c) => c.pinned);
-  const rest = state.collections.filter((c) => !c.pinned)
-    .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0) || a.name.localeCompare(b.name));
-  return [...pinned, ...rest];
+  const room = Math.max(0, SIDEBAR_COLLECTIONS - pinned.length);
+  const recent = byRecentActivity(state.collections.filter((c) => !c.pinned), stats).slice(0, room);
+  const shown = [...pinned, ...recent];
+  const open = state.route.name === 'c' ? ctx.collectionById(state.route.id) : null;
+  if (open && !shown.includes(open)) shown.push(open);
+  return shown;
+}
+
+// Home's tiles: pinned collections first (up to HOME_TILES), then the ones saved
+// into most recently. Empty unpinned collections are left out; fewer tiles is fine.
+function homeCollections(stats) {
+  const pinned = state.collections.filter((c) => c.pinned).slice(0, HOME_TILES);
+  const recent = byRecentActivity(state.collections.filter((c) => !c.pinned && stats.get(c.id)?.count), stats);
+  return [...pinned, ...recent].slice(0, HOME_TILES);
 }
 
 function pinnedIds() {
@@ -253,14 +304,12 @@ function renderSidebarCollections() {
   const list = $('collectionList');
   const scrollTop = list.scrollTop;
   clear(list);
-  const counts = liveCounts();
-  const covers = new Map();
-  for (const i of state.items) if (i.image && !i.archived && !covers.has(i.collectionId)) covers.set(i.collectionId, i.image);
+  const stats = collectionStats();
   const help = $('collectionHelp');
   if (help) help.textContent = pinnedIds().length > 1 ? 'Drag pinned collections to reorder' : 'Pin a collection to keep it on top';
-  for (const c of sidebarOrder(counts)) {
+  for (const c of sidebarOrder(stats)) {
     const active = state.route.name === 'c' && state.route.id === c.id;
-    const cover = c.coverImage || covers.get(c.id) || '';
+    const cover = c.coverImage || stats.get(c.id)?.images[0] || '';
     const coverNode = el('span', { class: 'collection-cover' }, cover ? [el('img', { src: cover, alt: '', loading: 'lazy', onError: (e) => { e.target.remove(); } })] : [UI.initialFor(c.name)]);
     if (!cover) coverNode.style.background = c.color || '#8A9A88';
     const li = el('li', {
@@ -298,7 +347,7 @@ function renderSidebarCollections() {
         },
         onKeydown: (e) => e.stopPropagation(),
       }, [UI.pinIcon(c.pinned)]),
-      el('span', { class: 'collection-count' }, [String(counts.get(c.id) || '')]),
+      el('span', { class: 'collection-count' }, [String(stats.get(c.id)?.count || '')]),
     ]);
     if (c.pinned) bindDrag(li, list);
     list.append(li);
@@ -382,7 +431,10 @@ function renderToolbar() {
   controls.classList.toggle('hidden-controls', !isGrid);
   $('bulkbar').classList.toggle('hidden', !(isGrid && state.selecting));
   let title = 'All saves';
-  if (r.name === 'favorites') title = 'Favorites';
+  if (r.name === 'home') title = 'Home';
+  else if (r.name === 'collections') title = 'Collections';
+  else if (r.name === 'favorites') title = 'Favorites';
+  else if (r.name === 'purchased') title = 'Purchased';
   else if (r.name === 'archive') title = 'Archive';
   else if (r.name === 'review') title = 'Review queue';
   else if (r.name === 'import') title = 'Instagram import';
@@ -418,6 +470,13 @@ function renderToolbar() {
     sourceSel.hidden = sourceTypes.length < 2;
     sortSelect.value = state.sort;
     $('searchInput').value = state.search;
+    // Typing in Home's search box lands here; keep the caret in the toolbar's box.
+    if (state.focusSearch) {
+      state.focusSearch = false;
+      const input = $('searchInput');
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
     $('selectToggle').setAttribute('aria-pressed', state.selecting ? 'true' : 'false');
     $('selectToggle').textContent = state.selecting ? 'Done' : 'Select';
     $('bulkAi').classList.toggle('hidden', !state.settings?.ai?.on);
@@ -431,6 +490,12 @@ function renderView({ keepScroll = false } = {}) {
   view.scrollTop = 0;
   const r = state.route;
   switch (r.name) {
+    case 'home':
+      renderHome(view);
+      break;
+    case 'collections':
+      renderCollections(view);
+      break;
     case 'settings':
       renderSettings(ctx, view);
       break;
@@ -472,6 +537,7 @@ function renderView({ keepScroll = false } = {}) {
       renderGrid(view);
   }
   if (isGridRoute()) $('viewCount').textContent = pluralize(currentGridItems().length, 'item', 'items');
+  else if (r.name === 'collections') $('viewCount').textContent = pluralize(state.collections.length, 'collection', 'collections');
   else $('viewCount').textContent = '';
   if (keepScroll) view.scrollTop = prevScroll;
 }
@@ -486,6 +552,8 @@ function baseItems() {
   const r = state.route;
   const live = state.items.filter((i) => !i.archived);
   if (r.name === 'favorites') return live.filter((i) => i.favorite);
+  // Everything marked bought, archived or not: a record of what was purchased.
+  if (r.name === 'purchased') return state.items.filter((i) => i.purchased);
   if (r.name === 'archive') return state.items.filter((i) => i.archived);
   if (r.name === 'c') return live.filter((i) => i.collectionId === r.id);
   return live;
@@ -555,8 +623,13 @@ function gridEmptyState() {
     });
   }
   if (r.name === 'favorites') return UI.emptyState({ title: 'No favorites yet', message: 'Tap the star on any card to keep it close.', icon: UI.starIcon(true) });
+  if (r.name === 'purchased') return UI.emptyState({ title: 'Nothing purchased yet', message: 'Mark something as purchased from its ⋯ menu or its details, and it’s kept here.', icon: UI.bagIcon() });
   if (r.name === 'archive') return UI.emptyState({ title: 'Nothing archived', message: 'Archive items you’ve bought or moved on from. They stay searchable here.', icon: UI.folderIcon() });
   if (r.name === 'c') return UI.emptyState({ title: 'This collection is empty', message: 'Save something from a product page and Keepsake will file it here when it fits.', icon: UI.folderIcon() });
+  return nothingSavedState();
+}
+
+function nothingSavedState() {
   return UI.emptyState({
     title: 'Nothing saved yet',
     message: 'Open a product page, click the Keepsake icon in your toolbar (or press Alt+Shift+K) and save. Everything you keep lives only in this browser.',
@@ -1211,6 +1284,7 @@ function collectionHero(col) {
   const coverNode = el('div', { class: 'cover' }, cover ? [el('img', { src: cover, alt: '', onError: (e) => e.target.remove() })] : [UI.initialFor(col.name)]);
   coverNode.style.background = col.color || '#8A9A88';
   const actions = [
+    el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': col.pinned ? 'true' : 'false', onClick: () => togglePin(col) }, [UI.pinIcon(col.pinned), col.pinned ? 'Pinned' : 'Pin']),
     el('button', { type: 'button', class: 'btn btn-sm', onClick: () => editCollection(col) }, ['Keywords']),
     el('button', { type: 'button', class: 'btn btn-sm btn-danger', onClick: () => deleteCollection(col) }, ['Delete']),
   ];
@@ -1381,6 +1455,160 @@ async function deleteCollection(col) {
   navigate('#all');
 }
 
+// --- home ------------------------------------------------------------------------------------------
+
+// A calm starting point: search, anything waiting on the user, the latest saves, and
+// a handful of collections. Everything else is one click away.
+function renderHome(view) {
+  const live = state.items.filter((i) => !i.archived);
+  if (!live.length) {
+    view.append(nothingSavedState());
+    return;
+  }
+  const page = el('div', { class: 'home' });
+  const search = el('input', { class: 'input', id: 'homeSearch', type: 'search', placeholder: 'Search your saves', 'aria-label': 'Search your saves', autocomplete: 'off' });
+  // Typing starts a search of the whole library in All saves.
+  search.addEventListener('input', () => {
+    const q = search.value.trim();
+    if (!q) return;
+    state.search = q;
+    state.shown = 120;
+    state.focusSearch = true;
+    navigate('#all');
+  });
+  page.append(searchField(search, 'search home-search'));
+
+  // Only shown when something is waiting, so a caught-up Home stays quiet.
+  const toReview = live.filter((i) => !i.collectionId).length;
+  if (toReview) {
+    page.append(el('a', { class: 'home-attention', href: '#review' }, [
+      el('span', { class: 'home-attention-dot', 'aria-hidden': 'true' }),
+      el('span', {}, [`${pluralize(toReview, 'save', 'saves')} waiting to be filed`]),
+      el('span', { class: 'home-attention-go' }, ['Review →']),
+    ]));
+  }
+
+  const recent = live.slice(0, 8);
+  page.append(homeSection('Recently saved', { href: '#all', label: 'All saves →' },
+    el('div', { class: 'home-recent', role: 'list' }, recent.map((item) => cardNode(item)))));
+
+  const stats = collectionStats();
+  const tiles = homeCollections(stats);
+  if (tiles.length) {
+    page.append(homeSection('Collections', { href: '#collections', label: `All ${state.collections.length} →` },
+      el('div', { class: 'tile-row' }, tiles.map((c) => collectionTile(c, stats)))));
+  }
+  view.append(page);
+}
+
+// The magnifier-and-input search box, same as the toolbar's.
+function searchField(input, className) {
+  const box = el('label', { class: className }, [input]);
+  box.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>');
+  return box;
+}
+
+function homeSection(title, link, body) {
+  return el('section', { class: 'home-section' }, [
+    el('div', { class: 'home-section-head' }, [
+      el('h2', { class: 'home-section-title' }, [title]),
+      link ? el('a', { class: 'home-section-link', href: link.href }, [link.label]) : null,
+    ]),
+    body,
+  ]);
+}
+
+// A collection as a cover tile: a collage of its latest images, name and count.
+function collectionTile(c, stats) {
+  const s = stats.get(c.id);
+  const images = [...new Set([c.coverImage, ...(s?.images || [])].filter(Boolean))].slice(0, 4);
+  const art = el('div', { class: 'tile-art' });
+  // Lays the collage out for however many images are left; none left shows the
+  // collection's initial on its color.
+  const layout = () => {
+    const left = art.querySelectorAll('img').length;
+    art.className = `tile-art tile-art-${left}`;
+    if (!left) {
+      art.style.background = c.color || '#8A9A88';
+      art.append(el('span', { class: 'tile-initial' }, [UI.initialFor(c.name)]));
+    }
+  };
+  for (const src of images) {
+    art.append(el('img', { src, alt: '', loading: 'lazy', decoding: 'async', onError: (e) => { e.target.remove(); layout(); } }));
+  }
+  layout();
+  return el('div', { class: `tile ${c.pinned ? 'pinned' : ''}` }, [
+    el('a', { class: 'tile-hit', href: `#c/${c.id}` }, [
+      art,
+      el('div', { class: 'tile-body' }, [
+        el('span', { class: 'tile-name' }, [c.name]),
+        el('span', { class: 'tile-count' }, [s?.count ? String(s.count) : 'Empty']),
+      ]),
+    ]),
+    el('button', {
+      type: 'button',
+      class: `tile-pin ${c.pinned ? 'is-pinned' : ''}`,
+      'aria-pressed': c.pinned ? 'true' : 'false',
+      'aria-label': c.pinned ? `Unpin ${c.name}` : `Pin ${c.name} to the top`,
+      title: c.pinned ? 'Unpin' : 'Pin to the top',
+      onClick: () => togglePin(c),
+    }, [UI.pinIcon(c.pinned)]),
+  ]);
+}
+
+// --- all collections ---------------------------------------------------------------------------------
+
+const COLLECTION_SORTS = {
+  recent: 'Recently saved to',
+  name: 'A–Z',
+  size: 'Most saves',
+};
+
+// Every collection, pinned first. Built for hundreds: a name search, three sorts, and
+// images that load only as tiles scroll into view.
+function renderCollections(view) {
+  const page = el('div', { class: 'collections-page' });
+  const grid = el('div', { class: 'tile-grid' });
+  const stats = collectionStats();
+  const fill = () => {
+    clear(grid);
+    const q = state.colSearch.toLowerCase();
+    let list = state.collections.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.keywords || []).some((k) => k.toLowerCase().includes(q)));
+    const pinned = list.filter((c) => c.pinned);
+    let rest = list.filter((c) => !c.pinned);
+    if (state.colSort === 'name') rest.sort((a, b) => a.name.localeCompare(b.name));
+    else if (state.colSort === 'size') rest.sort((a, b) => (stats.get(b.id)?.count || 0) - (stats.get(a.id)?.count || 0) || a.name.localeCompare(b.name));
+    else rest = byRecentActivity(rest, stats);
+    list = [...pinned, ...rest];
+    if (!list.length) {
+      grid.append(UI.emptyState({ title: 'No matching collections', message: `Nothing is called “${state.colSearch}”.`, icon: UI.folderIcon() }));
+      return;
+    }
+    for (const c of list) grid.append(collectionTile(c, stats));
+  };
+  const search = el('input', { class: 'input', id: 'collectionSearch', type: 'search', placeholder: 'Find a collection', 'aria-label': 'Find a collection', value: state.colSearch, autocomplete: 'off' });
+  search.addEventListener('input', debounce(() => {
+    state.colSearch = search.value.trim();
+    fill();
+  }, 100));
+  const sort = el('select', { class: 'select select-sm', 'aria-label': 'Sort collections' },
+    Object.entries(COLLECTION_SORTS).map(([value, text]) => el('option', { value, text })));
+  sort.value = state.colSort;
+  sort.addEventListener('change', () => {
+    state.colSort = sort.value;
+    fill();
+  });
+  page.append(el('div', { class: 'collections-controls' }, [
+    searchField(search, 'search'),
+    sort,
+    el('span', { class: 'grow' }),
+    el('button', { type: 'button', class: 'btn btn-sm', onClick: () => newCollection() }, ['＋ New collection']),
+  ]));
+  page.append(grid);
+  fill();
+  view.append(page);
+}
+
 // --- review queue --------------------------------------------------------------------------------
 
 function renderReview(view) {
@@ -1485,8 +1713,8 @@ function renderWelcome(view) {
       el('h2', {}, ['Keep what catches your eye.']),
       el('p', {}, ['Keepsake saves products from any site into collections that sort themselves. Everything stays in this browser — no account, no cloud, no tracking.']),
       el('div', { class: 'actions-row', style: { marginTop: '18px' } }, [
-        el('button', { type: 'button', class: 'btn btn-primary', onClick: () => navigate('#all') }, ['Start saving']),
-        el('button', { type: 'button', class: 'btn', onClick: async () => { await loadSample(); navigate('#all'); } }, ['Load sample data']),
+        el('button', { type: 'button', class: 'btn btn-primary', onClick: () => navigate('#home') }, ['Start saving']),
+        el('button', { type: 'button', class: 'btn', onClick: async () => { await loadSample(); navigate('#home'); } }, ['Load sample data']),
         el('button', { type: 'button', class: 'btn btn-quiet', onClick: () => navigate('#privacy') }, ['Read the privacy promise']),
       ]),
     ]),
