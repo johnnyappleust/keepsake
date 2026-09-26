@@ -34,7 +34,7 @@ async function requestOrigins(origins) {
 }
 
 function scopeItems(ctx, scope) {
-  const live = ctx.state.items.filter((i) => !i.archived);
+  const live = ctx.state.items.filter((i) => !i.archived && !i.purchased);
   if (scope === 'review') return live.filter((i) => !i.collectionId);
   if (scope === 'all') return live;
   return live.filter((i) => i.collectionId === scope);

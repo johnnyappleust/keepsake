@@ -212,7 +212,7 @@ function categorizationSection(ctx) {
       } }, ['Clear learned preferences'])]),
     ]);
     box.append(learnedBox);
-    box.append(el('p', { class: 'help' }, [`${ctx.state.items.filter((i) => i.needsReview && !i.archived).length} low-confidence saves waiting in the `, el('a', { href: '#review' }, ['review queue']), '.']));
+    box.append(el('p', { class: 'help' }, [`${ctx.state.items.filter((i) => i.needsReview && !i.archived && !i.purchased).length} low-confidence saves waiting in the `, el('a', { href: '#review' }, ['review queue']), '.']));
   };
   draw();
   return UI.section('Categorization', 'How Keepsake decides where a save goes: your collections’ keywords first, then collection names and built-in category words, then what it learned from your moves. All of it runs locally. Add keywords from a collection’s page.', [box]);

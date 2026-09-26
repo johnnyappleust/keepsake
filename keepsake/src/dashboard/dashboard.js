@@ -203,6 +203,10 @@ function toggleNav(force) {
 
 const GRID_ROUTES = new Set(['all', 'favorites', 'purchased', 'archive', 'c', 'item']);
 
+// Archived and purchased items leave All, Favorites, Review and their collection; they
+// keep their collectionId, so un-marking puts them straight back where they were.
+const isActive = (i) => !i.archived && !i.purchased;
+
 // keepScroll: re-render the current view in place (data changed underneath it)
 // instead of treating it as a navigation, so the page stays where the user was.
 function render({ keepScroll = false } = {}) {
@@ -220,7 +224,7 @@ function renderNav() {
     const route = a.dataset.route;
     a.classList.toggle('active', route === r.name || (r.name === 'item' && route === 'all'));
   });
-  const live = state.items.filter((i) => !i.archived);
+  const live = state.items.filter(isActive);
   setCount('countAll', live.length);
   setCount('countFav', live.filter((i) => i.favorite).length);
   setCount('countPurchased', state.items.filter((i) => i.purchased).length);
@@ -240,7 +244,7 @@ function setCount(id, n) {
 
 function liveCounts() {
   const counts = new Map();
-  for (const i of state.items) if (!i.archived) counts.set(i.collectionId, (counts.get(i.collectionId) || 0) + 1);
+  for (const i of state.items) if (isActive(i)) counts.set(i.collectionId, (counts.get(i.collectionId) || 0) + 1);
   return counts;
 }
 
@@ -250,7 +254,7 @@ function liveCounts() {
 function collectionStats() {
   const stats = new Map();
   for (const i of state.items) {
-    if (i.archived || !i.collectionId) continue;
+    if (!isActive(i) || !i.collectionId) continue;
     let s = stats.get(i.collectionId);
     if (!s) stats.set(i.collectionId, (s = { count: 0, last: i.createdAt || '', images: [] }));
     s.count += 1;
@@ -550,7 +554,7 @@ function isGridRoute() {
 
 function baseItems() {
   const r = state.route;
-  const live = state.items.filter((i) => !i.archived);
+  const live = state.items.filter(isActive);
   if (r.name === 'favorites') return live.filter((i) => i.favorite);
   // Everything marked bought, archived or not: a record of what was purchased.
   if (r.name === 'purchased') return state.items.filter((i) => i.purchased);
@@ -688,7 +692,7 @@ function cardNode(item) {
     item.purchased ? el('span', { class: 'badge' }, ['Purchased']) : null,
     item.type === 'instagram' || item.instagram ? el('span', { class: 'badge badge-sage' }, [UI.instagramIcon(), 'Instagram']) : null,
     item.type === 'inspiration' && !item.instagram ? el('span', { class: 'badge badge-sage' }, ['Inspiration']) : null,
-    !item.collectionId && !item.archived ? el('span', { class: 'badge' }, ['Needs sorting']) : null,
+    !item.collectionId && isActive(item) ? el('span', { class: 'badge' }, ['Needs sorting']) : null,
   ]);
   const favBtn = el('button', { type: 'button', class: `btn btn-icon ${item.favorite ? 'is-on' : ''}`, 'aria-label': item.favorite ? 'Remove from favorites' : 'Add to favorites', 'aria-pressed': item.favorite ? 'true' : 'false', onClick: async (e) => {
     e.stopPropagation();
@@ -1279,8 +1283,8 @@ function renderAiBox(box, item) {
 // --- collections ---------------------------------------------------------------------------------
 
 function collectionHero(col) {
-  const count = state.items.filter((i) => i.collectionId === col.id && !i.archived).length;
-  const cover = col.coverImage || state.items.find((i) => i.collectionId === col.id && i.image && !i.archived)?.image || '';
+  const count = state.items.filter((i) => i.collectionId === col.id && isActive(i)).length;
+  const cover = col.coverImage || state.items.find((i) => i.collectionId === col.id && i.image && isActive(i))?.image || '';
   const coverNode = el('div', { class: 'cover' }, cover ? [el('img', { src: cover, alt: '', onError: (e) => e.target.remove() })] : [UI.initialFor(col.name)]);
   coverNode.style.background = col.color || '#8A9A88';
   const actions = [
@@ -1460,7 +1464,7 @@ async function deleteCollection(col) {
 // A calm starting point: search, anything waiting on the user, the latest saves, and
 // a handful of collections. Everything else is one click away.
 function renderHome(view) {
-  const live = state.items.filter((i) => !i.archived);
+  const live = state.items.filter(isActive);
   if (!live.length) {
     view.append(nothingSavedState());
     return;
@@ -1612,7 +1616,7 @@ function renderCollections(view) {
 // --- review queue --------------------------------------------------------------------------------
 
 function renderReview(view) {
-  const items = state.items.filter((i) => !i.collectionId && !i.archived);
+  const items = state.items.filter((i) => !i.collectionId && isActive(i));
   const page = el('div', { class: 'page page-wide' });
   page.append(el('p', { class: 'page-intro' }, ['Keepsake wasn’t confident enough to file these automatically. Pick a collection for each and it learns for next time.']));
   if (items.length && state.settings?.ai?.on) {
