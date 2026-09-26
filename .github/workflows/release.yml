@@ -60,18 +60,29 @@ jobs:
       - name: Get access token
         id: auth
         env:
-          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          SA_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_KEY }}
         run: |
+          # Sign a JWT with the service account key and exchange it for an access token.
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          echo "$SA_KEY" | jq -r '.private_key' > sa.pem
+          EMAIL=$(echo "$SA_KEY" | jq -r '.client_email')
+          NOW=$(date +%s)
+          HEADER=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+          CLAIMS=$(jq -cn --arg iss "$EMAIL" --argjson now "$NOW" '{
+            iss: $iss,
+            scope: "https://www.googleapis.com/auth/chromewebstore",
+            aud: "https://oauth2.googleapis.com/token",
+            iat: $now,
+            exp: ($now + 3600)
+          }' | b64url)
+          SIG=$(printf '%s.%s' "$HEADER" "$CLAIMS" | openssl dgst -sha256 -sign sa.pem | b64url)
+          rm -f sa.pem
           RESPONSE=$(curl -sS -X POST https://oauth2.googleapis.com/token \
-            -d "client_id=${CLIENT_ID}" \
-            -d "client_secret=${CLIENT_SECRET}" \
-            -d "refresh_token=${REFRESH_TOKEN}" \
-            -d "grant_type=refresh_token")
+            -d "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            -d "assertion=${HEADER}.${CLAIMS}.${SIG}")
           ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
           if [ "$ACCESS_TOKEN" == "null" ] || [ -z "$ACCESS_TOKEN" ]; then
-            echo "::error::Failed to obtain access token from Google OAuth."
+            echo "::error::Failed to obtain access token for the service account."
             echo "$RESPONSE" | jq 'del(.access_token)'
             exit 1
           fi
@@ -81,31 +92,31 @@ jobs:
       - name: Upload package to Chrome Web Store
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.token }}
+          PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
         run: |
-          RESPONSE=$(curl -sS -X PUT \
+          RESPONSE=$(curl -sS -X POST \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "x-goog-api-version: 2" \
-            -T keepsake.zip \
-            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/${EXTENSION_ID}")
+            -H "Content-Type: application/zip" \
+            --data-binary @keepsake.zip \
+            "https://chromewebstore.googleapis.com/upload/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:upload")
           echo "$RESPONSE"
-          STATE=$(echo "$RESPONSE" | jq -r '.uploadState')
-          if [ "$STATE" != "SUCCESS" ]; then
-            echo "::error::Upload failed with state: $STATE"
+          STATE=$(echo "$RESPONSE" | jq -r '.uploadState // empty')
+          if [ "$STATE" != "SUCCEEDED" ] && [ "$STATE" != "IN_PROGRESS" ]; then
+            echo "::error::Upload failed with state: ${STATE:-none}"
             exit 1
           fi
 
       - name: Publish item
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.token }}
+          PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
         run: |
           RESPONSE=$(curl -sS -X POST \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "x-goog-api-version: 2" \
             -H "Content-Length: 0" \
-            "https://www.googleapis.com/chromewebstore/v1.1/items/${EXTENSION_ID}/publish")
+            "https://chromewebstore.googleapis.com/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:publish")
           echo "$RESPONSE"
-          STATUS=$(echo "$RESPONSE" | jq -r '.status[0] // empty')
-          if [ "$STATUS" != "OK" ] && [ "$STATUS" != "ITEM_PENDING_REVIEW" ]; then
+          if [ "$(echo "$RESPONSE" | jq 'has("error")')" == "true" ]; then
             echo "::error::Publish failed."
             exit 1
           fi
